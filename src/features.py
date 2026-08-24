@@ -182,6 +182,9 @@ def _load_prices() -> pd.DataFrame:
     prices = pd.concat(frames, ignore_index=True)
     prices["time"] = pd.to_datetime(prices["time"], utc=True).dt.tz_convert("US/Pacific")
     prices["time"] = prices["time"].dt.tz_localize(None)
+    # A (timestamp, hub) must be unique: duplicates would double-count a
+    # hub-hour in the daily/volatility aggregation.
+    prices = prices.drop_duplicates(subset=["time", "hub"]).sort_values("time")
     return prices
 
 

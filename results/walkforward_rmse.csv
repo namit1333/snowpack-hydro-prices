@@ -1,7 +1,6 @@
 model,rmse,mae,n
-augmented_arimax,8.6,7.41,3
-baseline_arima,8.6,7.41,3
 baseline_naive,8.6,7.41,3
 augmented_ols,9.138,7.778,3
 baseline_mean3,12.08,11.83,3
-augmented_controls,33.487,22.602,3
+baseline_arima,13.909,12.738,3
+augmented_arimax,16.031,14.985,3

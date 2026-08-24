@@ -274,7 +274,7 @@ def correlation_heatmap(p: pd.DataFrame):
             if not np.isnan(v):
                 ax.text(j, i, f"{v:+.2f}", ha="center", va="center", fontsize=12,
                         color="white" if abs(v) > 0.5 else "black", fontweight="bold")
-    ax.set_title("Snowpack vs. summer price features (n = 3, illustrative)", fontsize=12)
+    ax.set_title("Snowpack vs. summer price features (n = 6, exploratory)", fontsize=12)
     fig.colorbar(im, ax=ax, shrink=0.8, label="correlation")
     save(fig, "correlation_heatmap.png")
 
@@ -420,9 +420,8 @@ def walkforward_forecasts(p: pd.DataFrame):
         ax.annotate(f"{actual[yr]:.1f}", (yr, actual[yr]), textcoords="offset points",
                    xytext=(0, 12), ha="center", fontsize=9, fontweight="bold", color="black")
 
-    ax.set_title("Out-of-sample forecasts: 3 genuinely held-out years (2016-2018 "
-                 "train \u2192 2023-2025 test)\n"
-                 "No model beats persistence at n = 3 \u2014 the price signal is not yet detectable",
+    ax.set_title("Out-of-sample forecasts: 3 held-out years (2023-2025)\n"
+                 "No model beats persistence \u2014 price signal not detectable with 6 price years",
                  fontsize=12)
     ax.set_ylabel("Summer price volatility ($/MWh)", fontsize=11)
     ax.set_xlabel("Year", fontsize=11)

@@ -31,43 +31,49 @@
     "baseline_naive": {
       "dm": 0.11647700892248418,
       "p": 0.9072745062838137,
-      "n": 3
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     },
     "baseline_mean3": {
       "dm": -1.2078945479254246,
       "p": 0.22708782699375696,
-      "n": 3
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     },
     "baseline_arima": {
-      "dm": 0.11647700892248418,
-      "p": 0.9072745062838137,
-      "n": 3
+      "dm": -0.8334400900783934,
+      "p": 0.4045965726163545,
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     }
   },
   "n_oos_price_vol_hourly": 3,
   "illustrative_price_vol_hourly": true,
   "dm_price_vol_hourly": {
     "baseline_naive": {
-      "dm": -0.08821045173435325,
-      "p": 0.929709410418446,
-      "n": 3
+      "dm": -0.08821045173435259,
+      "p": 0.9297094104184466,
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     },
     "baseline_mean3": {
-      "dm": -1.9465051775332811,
-      "p": 0.05159408661600115,
-      "n": 3
+      "dm": -1.9465051775332802,
+      "p": 0.05159408661600121,
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     },
     "baseline_arima": {
-      "dm": -0.08821045173435325,
-      "p": 0.929709410418446,
-      "n": 3
+      "dm": -1.500565446134426,
+      "p": 0.13346799419620092,
+      "n": 3,
+      "n_oos_too_small_for_inference": true
     }
   },
   "first_stage_hydro_gwh": {
     "n": 8,
     "slope_gwh_per_pct": 24.880021156975673,
-    "ci95_lo": 8.945867303385727,
-    "ci95_hi": 40.81417501056562,
+    "ci95_lo": 4.987434472120231,
+    "ci95_hi": 44.77260784183112,
     "p_value": 0.022213686559705542,
     "r2": 0.6095283325247278,
     "pearson_r": 0.7807229550389354,
@@ -122,8 +128,8 @@
   "first_stage_hydro_gwh_eia": {
     "n": 6,
     "slope_gwh_per_pct": 26.966188027469755,
-    "ci95_lo": 7.681849669320723,
-    "ci95_hi": 46.250526385618784,
+    "ci95_lo": -0.35111138143888354,
+    "ci95_hi": 54.283487436378394,
     "p_value": 0.05186497582092804,
     "r2": 0.6525292761634669,
     "pearson_r": 0.8077928423571648,

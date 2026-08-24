@@ -108,6 +108,12 @@ def main(fetch: bool = False) -> None:
     if rmse is not None:
         rmse.to_csv(RESULTS / "walkforward_rmse.csv")
 
+    # conditional-controls robustness is a separate experiment (observed
+    # weather/demand, not a pure forecast) — save its own table
+    cc_rmse = res.get("rmse_conditional_controls_price_vol")
+    if isinstance(cc_rmse, pd.DataFrame):
+        cc_rmse.to_csv(RESULTS / "conditional_controls_rmse.csv")
+
     # serialize what json can hold
     serializable = {k: v for k, v in res.items()
                     if not isinstance(v, pd.DataFrame)}

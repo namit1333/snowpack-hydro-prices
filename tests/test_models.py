@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src import models
 
@@ -72,13 +73,34 @@ def test_mediation_insufficient_data():
     assert "error" in med
 
 
-def test_walk_forward_controls_model():
+def test_controls_model_not_in_default_leaderboard():
+    # The control model uses *observed* temperature/demand for the held-out
+    # year, so it must NOT appear in the pure-forecast leaderboard.
     p = _panel()
     p["temp_mean_c"] = 30 + 5 * np.sin(np.arange(len(p))) + 5
     p["demand_mean_mw"] = 30000 + 2000 * np.cos(np.arange(len(p)))
-    wf = models.walk_forward(p, min_train=6, control_cols=["temp_mean_c", "demand_mean_mw"])
-    assert models.CONTROL_MODEL in wf["model"].unique()
-    assert wf[wf["model"] == models.CONTROL_MODEL]["pred"].notna().all()
+    wf = models.walk_forward(p, min_train=6)
+    assert models.CONTROL_MODEL not in wf["model"].unique()
+
+
+def test_conditional_controls_eval_separate():
+    p = _panel()
+    p["temp_mean_c"] = 30 + 5 * np.sin(np.arange(len(p))) + 5
+    p["demand_mean_mw"] = 30000 + 2000 * np.cos(np.arange(len(p)))
+    cwf = models.conditional_controls_eval(p, min_train=6)
+    assert set(cwf["model"].unique()) == {models.CONTROL_MODEL}
+    assert cwf["pred"].notna().all()
+
+
+def test_controls_model_failure_is_loud_not_silent():
+    # A model that cannot be estimated must raise with a clear message, never
+    # quietly fall back to persistence (which would mask a real bug).
+    p = _panel()
+    # constant temperature -> degenerate control column -> must raise
+    p["temp_mean_c"] = 30.0
+    p["demand_mean_mw"] = 30000.0
+    with pytest.raises(RuntimeError, match="degenerate"):
+        models.conditional_controls_eval(p, min_train=4)
 
 
 def test_short_walk_forward_gives_multiple_oos():

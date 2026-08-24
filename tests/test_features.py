@@ -86,6 +86,26 @@ def test_build_monthly_panel_schema(tmp_path, monkeypatch):
     assert out["month"].isin([6, 7, 8, 9]).all()
 
 
+def test_load_prices_no_duplicate_timestamps(tmp_path, monkeypatch):
+    # The price loader must never return duplicate (timestamp, hub) rows,
+    # which would double-count a hub-hour in the volatility aggregation.
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    times = pd.date_range("2020-06-01", periods=24, freq="h", tz="UTC")
+    # deliberately include one duplicated (time, hub) pair
+    df = pd.concat([
+        pd.DataFrame({"time": times, "hub": "H1", "price": np.linspace(20, 80, 24)}),
+        pd.DataFrame({"time": times[:12], "hub": "H1", "price": np.linspace(20, 80, 12)}),
+    ], ignore_index=True)
+    df.to_csv(raw / "caiso_prices_2020.csv", index=False)
+    monkeypatch.setattr(features, "RAW_DIR", raw)
+    loaded = features._load_prices()
+    dupes = loaded.duplicated(subset=["time", "hub"]).sum()
+    assert dupes == 0
+    # both years/rows present means concat worked
+    assert len(loaded) >= 24
+
+
 def test_temperature_summary(tmp_path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()

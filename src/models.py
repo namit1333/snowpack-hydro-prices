@@ -39,27 +39,53 @@ def _fit_predict(model: str, train: pd.DataFrame, exog_col: str,
     if model == "baseline_mean3":
         return y[-3:].mean() if len(y) >= 3 else y.mean()
     if model == "baseline_arima":
-        try:
-            return float(ARIMA(y, order=(0, 1, 0), trend="c").fit().forecast(1)[0])
-        except Exception:
-            return y[-1]
+        # ARIMA(0,1,0) with drift, implemented directly: y[t+1] = y[t] + mu,
+        # where mu is the mean increment of the differenced series. (statsmodels
+        # >=0.14 rejects trend="c" with d=1 since the constant is eliminated by
+        # differencing; this closed form is identical and dependency-free.)
+        diff = np.diff(y)
+        drift = float(np.mean(diff)) if len(diff) else 0.0
+        return float(y[-1] + drift)
     if model == "augmented_ols":
         lr = OLS(y, np.column_stack([np.ones(len(y)), train[exog_col].values])).fit()
         return float(lr.predict(np.array([[1.0, x_next]]))[0])
     if model == "augmented_arimax":
+        # ARIMA(0,1,0) with drift + exogenous regressor: regress the differenced
+        # target on the differenced exogenous with a constant (drift), then
+        # integrate one step. Closed-form equivalent of ARIMAX(0,1,0).
+        x = train[exog_col].values
+        if len(x) < 2 or np.allclose(np.diff(x), 0):
+            raise RuntimeError("ARIMAX: exogenous series is constant or too short "
+                               "to difference")
+        dy = np.diff(y)
+        dx = np.diff(x)
+        X = np.column_stack([np.ones(len(dy)), dx])
         try:
-            mod = ARIMA(y, exog=train[[exog_col]].values, order=(0, 1, 0), trend="c")
-            return float(mod.fit().forecast(1, exog=np.array([[x_next]]))[0])
-        except Exception:
-            return y[-1]
+            fit = OLS(dy, X).fit()
+        except Exception as exc:
+            raise RuntimeError(
+                f"ARIMAX failed during walk-forward prediction: {exc}") from exc
+        d_pred = float(fit.predict(np.array([[1.0, x_next - x[-1]]]))[0])
+        return float(y[-1] + d_pred)
     if model == CONTROL_MODEL:
         # snowpack + controls (temperature + demand) — the confounder check.
         # Uses the *observed* temperature/demand of the held-out year, which
         # makes this a conditional (what-if) evaluation, not a pure forecast.
         cols = [exog_col] + [c for c in (control_cols or []) if c in train.columns]
         cols = [c for c in cols if train[c].notna().all() and len(train[c].unique()) > 1]
+        requested = [c for c in (control_cols or []) if c in train.columns]
+        survived = [c for c in requested if c in cols]
+        if not requested:
+            raise RuntimeError(
+                f"{CONTROL_MODEL}: no requested control columns present in the panel")
+        if not survived:
+            raise RuntimeError(
+                f"{CONTROL_MODEL}: all requested control columns are degenerate "
+                f"(constant or NaN): {requested}")
         if len(cols) < 1 or len(train) <= len(cols) + 1:
-            return y[-1]
+            raise RuntimeError(
+                f"{CONTROL_MODEL} has too few training rows or degenerate controls "
+                f"(train={len(train)}, cols={len(cols)})")
         X = np.column_stack([np.ones(len(train))] + [train[c].values for c in cols])
         x_row = [1.0]
         for c in cols:
@@ -72,8 +98,9 @@ def _fit_predict(model: str, train: pd.DataFrame, exog_col: str,
         try:
             lr = OLS(y, X).fit()
             return float(lr.predict(np.array([x_row]))[0])
-        except Exception:
-            return y[-1]
+        except Exception as exc:
+            raise RuntimeError(
+                f"{CONTROL_MODEL} failed during walk-forward prediction: {exc}") from exc
     raise ValueError(model)
 
 
@@ -89,8 +116,9 @@ def walk_forward(panel: pd.DataFrame, target: str = "price_vol",
     (the caller can flag such runs as illustrative). Returns an empty frame if
     fewer than 3 years are available.
 
-    With the 2016-2018 + 2023-2025 price record (6 years), min_train=3 yields
-    three genuine held-out years (2018, 2023, 2024...) rather than one.
+    With the 2016-2018 + 2023-2025 price record (6 years), min_train=3
+    produces three strictly out-of-sample predictions for 2023, 2024, 2025
+    (each trained only on prior years).
     """
     cols = [target, exog_col] + (control_cols or [])
     df = panel[[c for c in cols if c in panel.columns]].dropna().sort_index()
@@ -98,11 +126,12 @@ def walk_forward(panel: pd.DataFrame, target: str = "price_vol",
     if len(df) < 3:
         return pd.DataFrame(columns=["year", "model", "pred", "actual", "error", "sq_error"])
     min_train = min(min_train, max(2, len(df) - 1))
-    all_models = list(MODELS)
-    if control_cols and any(c in df.columns for c in control_cols):
-        all_models.append(CONTROL_MODEL)
+    # NOTE: the CONTROL_MODEL is deliberately NOT in the default leaderboard.
+    # It is a conditional (what-if) robustness check that uses observed
+    # temperature/demand for the held-out year, so it cannot be compared as a
+    # pure forecast. Callers opt in via models=[CONTROL_MODEL].
     rows = []
-    for model in (models or all_models):
+    for model in (models or list(MODELS)):
         for i in range(min_train, len(df)):
             train = df.iloc[:i]
             next_row = df.iloc[i]
@@ -116,6 +145,24 @@ def walk_forward(panel: pd.DataFrame, target: str = "price_vol",
     out["error"] = out["actual"] - out["pred"]
     out["sq_error"] = out["error"] ** 2
     return out
+
+
+def conditional_controls_eval(panel: pd.DataFrame, target: str = "price_vol",
+                              exog_col: str = "snowpack_pct",
+                              control_cols: list[str] | None = None,
+                              min_train: int = 4) -> pd.DataFrame:
+    """Conditional robustness check: snowpack + *observed* temperature/demand.
+
+    This is a what-if evaluation, NOT a pure forecast (the controls for the
+    held-out year are observed, not predicted). It answers: "given we knew the
+    summer weather, does snowpack add explanatory power?" Reported separately
+    from the forecast leaderboard so the two experiments stay distinct.
+
+    Returns the same [year, model, pred, actual, error, sq_error] schema.
+    """
+    return walk_forward(panel, target=target, exog_col=exog_col,
+                        min_train=min_train, models=[CONTROL_MODEL],
+                        control_cols=control_cols or ["temp_mean_c", "demand_mean_mw"])
 
 
 def rmse_table(wf: pd.DataFrame) -> pd.DataFrame:
@@ -238,7 +285,11 @@ def first_stage(panel: pd.DataFrame, mediator: str = "hydro_gwh") -> dict:
     X = np.column_stack([np.ones(len(df)), df["snowpack_pct"].values])
     fit = OLS(df[mediator].values, X).fit()
     slope, se = float(fit.params[1]), float(fit.bse[1])
-    ci_lo, ci_hi = slope - 1.96 * se, slope + 1.96 * se
+    # Small-sample 95% CI: t critical value with n-2 df, not the asymptotic 1.96.
+    # With n=8 (6 df) the t cutoff is 2.447 vs 1.96 — a ~25% wider interval,
+    # the honest way to report uncertainty on a tiny regression.
+    t_crit = float(stats.t.ppf(0.975, df=fit.df_resid))
+    ci_lo, ci_hi = slope - t_crit * se, slope + t_crit * se
 
     # Leave-one-out: re-fit dropping each year in turn
     loo = []
@@ -281,18 +332,21 @@ def run_analysis(panel: pd.DataFrame) -> dict:
     out = {"correlations": correlations(panel, min_n=3).to_dict("records")}
 
     # Headline target: daily volatility. Also try hourly volatility.
+    # The CONTROL_MODEL is kept OUT of this leaderboard: it uses observed
+    # temperature/demand for the held-out year, so it is a conditional
+    # what-if check, not a pure forecast. See `conditional_controls_eval`.
     for target in ["price_vol", "price_vol_hourly"]:
         if target not in panel.columns or panel[target].notna().sum() < 3:
             continue
-        ctrl = ["temp_mean_c", "demand_mean_mw"]
-        wf = walk_forward(panel, target=target, min_train=3, control_cols=ctrl)
+        wf = walk_forward(panel, target=target, min_train=3)
         out[f"wf_{target}"] = wf
         out[f"rmse_{target}"] = rmse_table(wf)
         n_oos = wf[wf["model"] == "augmented_ols"].shape[0]
         out[f"n_oos_{target}"] = n_oos
         out[f"illustrative_{target}"] = n_oos < 5
 
-        # DM: augmented_ols vs each baseline, on common years
+        # DM: augmented_ols vs each baseline, on common years. With n=3 OOS
+        # this is reported for completeness only, never as inference.
         dms = {}
         for base in ["baseline_naive", "baseline_mean3", "baseline_arima"]:
             a = wf[wf["model"] == "augmented_ols"].set_index("year")["error"]
@@ -300,7 +354,18 @@ def run_analysis(panel: pd.DataFrame) -> dict:
             both = a.index.intersection(b.index)
             if len(both) >= 3:
                 dms[base] = dm_test(a.loc[both].values, b.loc[both].values)
+                dms[base]["n_oos_too_small_for_inference"] = len(both) < 10
         out[f"dm_{target}"] = dms
+
+        # Conditional robustness (observed controls) — separate experiment
+        try:
+            ctrl = [c for c in ["temp_mean_c", "demand_mean_mw"] if c in panel.columns]
+            if ctrl:
+                cwf = conditional_controls_eval(panel, target=target, control_cols=ctrl)
+                out[f"conditional_controls_{target}"] = cwf
+                out[f"rmse_conditional_controls_{target}"] = rmse_table(cwf)
+        except RuntimeError as exc:
+            out[f"conditional_controls_{target}"] = {"error": str(exc)}
 
     # First stage of the causal chain (snowpack -> hydro) on full record
     for med in ["hydro_gwh", "hydro_gwh_eia"]:

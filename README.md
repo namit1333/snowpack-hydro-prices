@@ -1,299 +1,270 @@
 <div align="center">
 
-# ❄️ Snowpack → Hydropower → Electricity Prices
+# Snowpack → Hydropower → Electricity Prices
 
-### Does California's winter snowpack predict summer electricity-market behavior?
+**Does California's winter snowpack predict summer electricity-market behavior?**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-17%20passing-brightgreen?style=for-the-badge)](.github/workflows/tests.yml)
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue?style=for-the-badge)](.github/workflows/tests.yml)
+[![CI](https://github.com/namit1333/snowpack-hydro-prices/actions/workflows/tests.yml/badge.svg)](https://github.com/namit1333/snowpack-hydro-prices/actions/workflows/tests.yml)
 
-**Author:** [namit1333](https://github.com/namit1333) &nbsp;|&nbsp; **Repo:** [snowpack-hydro-prices](https://github.com/namit1333/snowpack-hydro-prices)
-
-</div>
-
----
-
-<div align="center">
-
-| 🏔️ **46 years** of snowpack data | ⚡ **8 years** of hydro generation | 💰 **6 years** of electricity prices |
-|:---:|:---:|:---:|
-| CDEC snow courses, 1980–2025 | CAISO fuel mix + EIA-930 | CAISO day-ahead LMP, 2016–25 |
+Author: [namit1333](https://github.com/namit1333)
 
 </div>
 
 ---
 
-## 🎯 Key Finding
+A reproducible causal-chain study: does snowpack predict summer electricity
+price behavior through hydroelectric generation? End-to-end ETL → feature
+engineering → forecasting → statistical inference, from public data, cached,
+unit-tested, and run in CI.
 
-<div align="center">
+Coverage: **46 years** of snowpack (CDEC, 1980–2025) · **8 years** of hydro
+generation (CAISO fuel mix + EIA-930 cross-check) · **6 years** of price
+history (2016–18 + 2023–25, **two measurement regimes** — see below).
 
-> **Physical mechanism confirmed — market effect inconclusive with current data.**
+---
+
+## Key finding
+
+> **The physical mechanism is strongly supported; the market effect is
+> inconclusive with current data.**
 >
-> The snowpack → hydro link is statistically established (+24.9 GWh per +1 pp, p = 0.022, n = 8, cross-validated across two independent data sources). The tradeable downstream signal — snowpack → electricity prices — is **not yet established** with 6 years of price data: no model beats a persistence baseline out-of-sample.
+> Wet winters reliably produce more summer hydro: **+24.9 GWh per +1
+> percentage point of April 1 snowpack** (95% CI [5.0, 44.8], p = 0.022,
+> n = 8), stable under leave-one-out, confirmed by an independent EIA-930
+> series (+27.0 GWh/pp). The tradeable downstream signal — snowpack →
+> electricity prices — is **not established**: with 6 years of price data
+> across two measurement regimes, no snowpack-augmented model beats a
+> persistence baseline out-of-sample.
 
-</div>
-
-⚠️ **Important limitation:** The price window is **6 years** (2016–18 + 2023–25, with a 2019–22 gap in public records). Walk-forward forecasts have **3 genuinely held-out years** (2023–25), but that is still too few for conclusive inference on the price legs. Everything reported for the price side is labeled *illustrative/exploratory*; the hydro-side result is the robust finding.
-
----
-
-## 🌟 Why This Matters
-
-California relies heavily on renewable electricity, including hydroelectric generation. Mountain snowpack acts as a **natural reservoir**, storing winter precipitation for summer release. Understanding whether snowpack conditions can help predict summer electricity-market behavior could potentially improve:
-
-- **Energy-market forecasting** for traders and utilities
-- **Grid reliability planning** during drought vs. wet years
-- **Climate adaptation strategies** as snowpack patterns shift under climate change
-
-This project investigates whether the well-established physical link (snow → water → hydro) translates into measurable effects on electricity prices.
+**Important limitation:** the price window is 6 years (2016–18 + 2023–25, with
+a 2019–22 gap in public records) from **two different measurement regimes**.
+Walk-forward forecasts have 3 strictly out-of-sample years (2023–25), which is
+too few for conclusive price-side inference. Everything on the price side is
+labeled exploratory; the hydro-side result is the robust finding.
 
 ---
 
-## 📊 Key Results at a Glance
+## Two price measurement regimes
 
-| Question | Finding | Significance |
-|:---------|:--------|:-------------|
-| **Does snowpack predict hydro output?** | ✅ Yes — +24.9 GWh per +1 pp | 95% CI [8.9, 40.8]; p = 0.022 (n = 8) |
-| **Is the relationship reproducible?** | ✅ Yes — EIA-930 independent source agrees | +27.0 GWh/pp (n = 6) |
-| **Does snowpack predict price volatility?** | ⚠️ Inconclusive — 3 held-out years | DM p = 0.052 (hourly vol, vs 3-yr mean) |
-| **Does hydro mediate the snowpack→price link?** | ⚠️ Exploratory — insufficient observations | Sobel test uninformative at n ≤ 6; not reported as a point estimate |
+The 6-year price window is **not** a single homogeneous series:
 
----
+- **2016–2018:** one CAISO node (Bayshore, `BAYSHOR2_1_N001`) from an archived
+  third-party mirror of OASIS data.
+- **2023–2025:** three CAISO trading hubs (NP15, SP15, ZP26) fetched live.
 
-## 🏗️ Architecture
-
-<div align="center">
-  <img src="results/figures/pipeline_flowchart.png" alt="Pipeline Architecture" width="850">
-</div>
-
-| Stage | Module | Description |
-|:------|:-------|:------------|
-| **Data Acquisition** | `fetch_cdec.py`, `fetch_caiso_oasis.py`, `fetch_eia.py`, `fetch_controls.py` | CDEC, CAISO OASIS, EIA-930, Open-Meteo, EIA gas |
-| **Feature Engineering** | `features.py` | Yearly + monthly panels: snowpack index, price, hydro, controls |
-| **Modeling** | `models.py` | Baselines, walk-forward (3 OOS), Diebold-Mariano, mediation |
-| **Orchestration** | `run_pipeline.py` | End-to-end execution → results |
-| **Validation** | `tests/` + GitHub Actions | 17 unit tests, auto-run on push |
+Measured across the three hubs in 2023–25, cross-hub dispersion of summer
+volatility is ~10–17% of the mean — an upper bound on the regime difference the
+single-node data introduces. Year-to-year volatility swings (5 → 28 $/MWh) are
+several times larger, so the volatility comparison is meaningful, but **all
+cross-regime model comparisons are treated as exploratory**. Full detail in
+[DATA_PROVENANCE.md](DATA_PROVENANCE.md).
 
 ---
 
-## 📈 Results
+## Results
 
-### 1. The Snowpack → Hydro Link (Statistically Established)
+### 1. Snowpack → hydro (the supported leg)
 
-<div align="center">
-  <img src="results/figures/hydro_vs_snowpack.png" alt="Hydro vs Snowpack" width="650">
-</div>
+![hydro_vs_snowpack](results/figures/hydro_vs_snowpack.png)
 
-| Data Source | Slope (GWh/pp) | 95% CI | p-value | R² | Pearson r | n |
-|:------------|:---------------|:-------|:--------|:---|:----------|:--|
-| **CAISO fuel mix** | **+24.9** | **[8.9, 40.8]** | **0.022** | 0.61 | 0.78 | 8 |
-| EIA-930 (independent) | +27.0 | [7.7, 46.3] | 0.052 | 0.65 | 0.81 | 6 |
+| Data source | Slope (GWh/pp) | 95% CI (t, n−2) | p | R² | r | n |
+|---|---|---|---|---|---|---|
+| **CAISO fuel mix** | **+24.9** | **[5.0, 44.8]** | **0.022** | 0.61 | 0.78 | 8 |
+| EIA-930 (independent) | +27.0 | [-0.4, 54.3] | 0.052 | 0.65 | 0.81 | 6 |
 
-> A 10-pp rise in April 1 snowpack ⇒ ≈ **+250 GWh of summer hydro** — roughly 3% of a typical CAISO summer hydro output. This relationship is statistically significant and consistent across two independent measurement systems.
+A 10-pp rise in April 1 snowpack ⇒ ≈ +250 GWh of summer hydro — roughly 3% of
+a typical CAISO summer. **Leave-one-out robustness:** dropping any single year
+keeps the slope positive in all 8 fits (+19.8 to +40.8 GWh/pp, all p < 0.07),
+so the result is not driven by one year. CIs use the t distribution at n − 2
+degrees of freedom (see [METHODS.md](METHODS.md)).
 
-**Leave-one-out robustness** (n = 8 is small enough that one influential year could move the result): re-fitting while dropping each year in turn keeps the CAISO slope **positive in all 8 fits** (range +19.8 to +40.8 GWh/pp, all p < 0.07), so the result is not driven by a single year.
+### 2. The price question (exploratory)
 
-### 2. The Price Question (6-Year Window, Still Inconclusive)
+![price_panel](results/figures/price_panel_2023_2025.png)
 
-<div align="center">
-  <img src="results/figures/price_panel_2023_2025.png" alt="Price Panel" width="650">
-</div>
+![correlation_heatmap](results/figures/correlation_heatmap.png)
 
-<div align="center">
-  <img src="results/figures/correlation_heatmap.png" alt="Correlation Heatmap" width="450">
-</div>
+Walk-forward, strictly out-of-sample, **3 held-out years (2023, 2024, 2025)**:
 
-**⚠️ Three genuinely out-of-sample years (2023, 2024, 2025):**
+| Model | RMSE ($/MWh) | n_OOS | Note |
+|---|---|---|---|
+| baseline_naive | 8.60 | 3 | Persistence |
+| baseline_arima | 8.60 | 3 | Random walk + drift |
+| augmented_arimax | 8.60 | 3 | Snowpack exog. |
+| augmented_ols | 9.14 | 3 | Snowpack regressor |
+| baseline_mean3 | 12.08 | 3 | Trailing 3-yr mean |
 
-| Model | RMSE ($/MWh) | OOS Years | Note |
-|:------|:-------------|:----------|:-----|
-| augmented\_arimax | 8.60 | 3 | Ties persistence |
-| baseline\_naive | 8.60 | 3 | Persistence |
-| baseline\_arima | 8.60 | 3 | — |
-| augmented\_ols | 9.14 | 3 | — |
-| baseline\_mean3 | 12.08 | 3 | Worst |
-| augmented\_controls | 33.49 | 3 | Overfits at n=3 |
+![walkforward_forecasts](results/figures/walkforward_forecasts.png)
 
-<div align="center">
-  <img src="results/figures/walkforward_forecasts.png" alt="Walk-Forward" width="600">
-</div>
+**No model beats persistence.** The wettest year in the window (2023, snowpack
+≈ 236%) had the *highest* volatility — opposite to the hypothesis. The
+Diebold–Mariano statistic is reported for completeness only: with three
+out-of-sample years it is far too weak for predictive-accuracy inference (the
+n = 3 OOS sample is insufficient; DM is descriptive, not evidence).
 
-> **Interpretation:** With three genuinely held-out years, **no model beats simple persistence** — the price signal from snowpack is not yet detectable. The wettest year (2023, snowpack ≈ 236%) had the *highest* volatility, opposite to the hypothesized direction. The Diebold-Mariano test (hourly volatility vs trailing-mean baseline) reaches **p = 0.052** — suggestive but not conclusive.
+**Note on multiple comparisons:** the near-threshold p-values (0.022, 0.052,
+0.052) come from a small set of *pre-specified* tests, not from searching many
+models. The two 0.052 values were independently recomputed and are distinct
+computations (an OLS t-test on n = 6 vs. a Newey–West HAC DM test on n = 3)
+that happen to round to the same figure. At n ≤ 8 these are exploratory
+evidence, not confirmatory.
 
-**A note on multiple comparisons:** the near-threshold p-values (0.022, 0.052, 0.052) come from a small set of *pre-specified* tests — one first-stage slope, one walk-forward comparison per baseline, one DM test per baseline — not from searching many models and reporting the best. Still, at n ≤ 8 these should be read as **exploratory evidence, not confirmatory**. The hydro result survives a leave-one-out sweep; the price result does not, which is exactly why it is labeled inconclusive.
+**Failed hypothesis, stated plainly:** snowpack-augmented price forecasting did
+not outperform persistence out-of-sample, and conditioning on observed
+temperature/demand (a what-if robustness check, kept out of the leaderboard)
+did not rescue it. The physical snowpack → hydro relationship does not
+automatically translate into a short-horizon price-volatility signal with the
+available data. That is the finding.
 
-### 3. Mediation Analysis (Exploratory Only)
+### 3. Mediation — exploratory, not inference
 
-<div align="center">
-  <img src="results/figures/mediation_diagram.png" alt="Mediation Diagram" width="650">
-</div>
+Baron–Kenny mediation is implemented and kept in the repo
+(`notebooks/02_mediation_analysis.ipynb`) to demonstrate the method and the
+decomposition, but it is **intentionally not used for inference**: with only
+3–6 overlapping price years the Sobel test is uninformative (p ≈ 1.00), so no
+point estimate is reported. It will be re-run at full power when the price
+archive is complete.
 
-The Baron-Kenny decomposition is reported in the detailed section only, **not** as a headline point estimate: with n ≤ 6 overlapping years the Sobel test is uninformative (p ≈ 1.00), so the proportion-mediated figure carries no statistical weight. Kept in the repo because the decomposition is instructive, **not** as evidence. Rerun at full power when the price archive is complete.
+### 4. Monthly panel
 
-### 4. Monthly Panel — The Power Boost
-
-Beyond the annual panel, `features.py` builds a **monthly summer panel** (Jun–Sep, one row per year-month): **24 observations** from the 6 price years, vs 6 annual. This is the natural next step for the price legs as history grows:
-
-| Year | Jun | Jul | Aug | Sep |
-|:-----|:----|:----|:----|:----|
-| 2016 | 4.7 | 6.3 | 3.3 | 3.5 |
-| 2017 | 19.6 | 4.4 | 22.3 | 20.3 |
-| 2018 | 7.0 | 40.9 | 19.8 | 3.2 |
-
-*Monthly price volatility ($/MWh) — 4× the annual observations.*
-
-### 5. The Statistical Framework
-
-<div align="center">
-  <img src="results/figures/equations.png" alt="Equations" width="650">
-</div>
+`build_monthly_panel()` produces one row per (year, month) of Jun–Sep — **24
+observations** from the 6 price years vs. 6 annual — the natural next step for
+the price legs as history grows.
 
 ---
 
-## 🗂️ Data Dictionary
+## Methodology
+
+Why April 1? Why the summer window? Why volatility? Why persistence and
+ARIMA baselines? Why walk-forward over random splits? Why Diebold–Mariano over
+RMSE? Why leave-one-out over k-fold at n = 8? Why small-sample t-intervals?
+Why these controls, and why the controls model is kept out of the forecast
+leaderboard?
+
+Each choice is explained in the author's own words in **[METHODS.md](METHODS.md)**.
+
+---
+
+## Data & provenance
+
+Every dataset, its original source, retrieval path, coverage, and
+transformation is documented in **[DATA_PROVENANCE.md](DATA_PROVENANCE.md)** —
+including the single-node vs. three-hub price regimes above.
 
 | Variable | Description | Units | Source |
-|:---------|:------------|:------|:-------|
-| `snowpack_pct` | April 1 snowpack relative to 1991–2020 normal (median across 259 courses) | % | CDEC |
+|---|---|---|---|
+| `snowpack_pct` | April 1 SWC, % of 1991–2020 normal, median of 259 courses | % | CDEC |
 | `hydro_gwh` | Summer hydro generation (Large + Small) | GWh | CAISO fuel mix |
-| `hydro_gwh_eia` | Same as above, independent source | GWh | EIA-930 |
-| `price_mean` | Mean summer electricity price (day-ahead LMP) | $/MWh | CAISO OASIS |
-| `price_vol` | Price volatility (std of daily-mean LMP) | $/MWh | CAISO OASIS |
-| `price_peak` | Peak summer price (max of daily-mean LMP) | $/MWh | CAISO OASIS |
-| `demand_mean_mw` | Mean summer electricity demand | MW | EIA-930 |
+| `hydro_gwh_eia` | Same, independent source | GWh | EIA-930 |
+| `price_mean` | Mean summer day-ahead LMP | $/MWh | CAISO OASIS |
+| `price_vol` | Volatility: std of daily-mean LMP | $/MWh | CAISO OASIS |
+| `price_peak` | Max summer daily-mean LMP | $/MWh | CAISO OASIS |
+| `demand_mean_mw` | Mean summer demand | MW | EIA-930 (key) |
 | `temp_mean_c` | Mean summer daily-max temperature | °C | Open-Meteo |
-| `heat_days_38c` | Days with max temp ≥ 38 °C (heat waves) | days | Open-Meteo |
-| `gas_mean` | Mean summer Henry Hub natural gas price | $/MMBtu | EIA |
+| `heat_days_38c` | Days ≥ 38 °C (heat waves) | days | Open-Meteo |
+| `gas_mean` | Mean summer Henry Hub price | $/MMBtu | EIA (key) |
+
+Known gaps — flagged, never imputed: 2019–22 prices (OASIS paywall), 2020 EIA
+hourly hydro (893/2,928 h), 2015 snowpack (drought → index 0). Demand/gas
+columns are empty without `EIA_API_KEY`.
 
 ---
 
-## ⚠️ Limitations & Honest Caveats
+## Architecture
 
-<div align="center">
+![pipeline_flowchart](results/figures/pipeline_flowchart.png)
 
-| Issue | Impact | Status |
-|:------|:-------|:-------|
-| **CAISO LMP gap 2019–2022** | Price analysis spans 2016–18 + 2023–25 (6 years) | Pipeline auto-adapts when history added |
-| **n = 3 for out-of-sample forecasting** | RMSE comparisons are meaningful but low-power | Documented; DM test runs at p = 0.052 |
-| **Confounding variables partially controlled** | Temperature included; demand/gas need EIA key | `fetch_controls.py` ready |
-| **2020 EIA hourly gap** (893/2,928 hours) | Partial year excluded from hydro analysis | Flagged, not imputed |
-| **Historical prices are a single node** (Bayshore) | 2016–18 prices differ from 3-hub average | Volatility comparable; documented |
-
-</div>
-
-**What would make this study conclusive:**
-1. Continuous CAISO price data 2016+ (the 2019–22 gap is the binding constraint)
-2. Temperature and demand controls (temperature ✅, demand/gas with EIA key)
-3. 10+ years for walk-forward validation
-4. Monthly panel with full coverage
+| Stage | Module |
+|---|---|
+| Data acquisition | `fetch_cdec.py`, `fetch_caiso_oasis.py`, `fetch_eia.py`, `fetch_controls.py` |
+| Feature engineering | `features.py` (yearly + monthly panels) |
+| Modeling | `models.py` (baselines, walk-forward, DM, mediation, LOO) |
+| Orchestration | `run_pipeline.py` |
+| Validation | `tests/` (20 tests) + GitHub Actions (Python 3.10–3.12) |
 
 ---
 
-## 🛠️ Tech Stack
-
-| Category | Tools |
-|:---------|:------|
-| **Data** | `pandas`, `numpy`, `requests`, `gridstatus` |
-| **Statistics** | `statsmodels` (ARIMA, OLS, HAC), `scipy` |
-| **Controls** | Open-Meteo (no key), EIA-930 demand, EIA Henry Hub |
-| **Testing/CI** | `pytest` (17 tests), GitHub Actions (Python 3.10–3.12) |
-| **Reproducibility** | Pinned `requirements.txt`, `.venv`, cached raw data |
-
----
-
-## 🚀 Reproduction Guide
-
-### Quick Start (with the bundled sample data)
+## Reproduce
 
 ```bash
 git clone https://github.com/namit1333/snowpack-hydro-prices.git
 cd snowpack-hydro-prices
 python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt   # Windows
-.venv/bin/pip install -r requirements.txt       # macOS/Linux
+.venv/Scripts/pip install -r requirements.txt      # Windows
+# .venv/bin/pip install -r requirements.txt        # macOS/Linux
 
-# Run analysis on the bundled sample panel (no API keys, no downloads):
-.venv\Scripts\python -c "import sys; sys.path.insert(0,'.'); from src.features import build_panel; print('sample ready')"
+# Sample panel: no downloads, no keys
+.venv/Scripts/python scripts/make_sample_data.py
+
+# Full pipeline (real data, ~5-10 min; EIA key optional for hydro cross-check + demand/gas)
+cp .env.example .env   # add EIA_API_KEY
+.venv/Scripts/python -m src.run_pipeline --fetch
+
+# Tests + figures + notebooks
+.venv/Scripts/python -m pytest tests/ -v
+.venv/Scripts/python scripts/make_figures.py
+.venv/Scripts/python scripts/make_notebooks.py
 ```
 
-### Full pipeline (real data, ~5-10 min)
-
-```bash
-# 1. Configure API key (optional — hydro cross-check + demand/gas controls)
-cp .env.example .env   # then add your EIA key (free at eia.gov/opendata)
-
-# 2. Fetch everything and run
-.venv\Scripts\python -m src.run_pipeline --fetch   # Windows
-.venv/bin/python -m src.run_pipeline --fetch       # macOS/Linux
-
-# 3. Tests + figures
-.venv\Scripts\python -m pytest tests/ -v
-.venv\Scripts\python scripts/make_figures.py
-```
-
-**Requirements:** Python 3.10+ (tested 3.10–3.13). CI runs the suite on 3.10/3.11/3.12.
+`requirements.txt` declares **minimum versions** for human readability;
+`requirements-lock.txt` is the exact frozen environment used for development.
+Requires Python 3.10+.
 
 ---
 
-## 📁 Repository Structure
+## Repository structure
 
 ```
 snowpack-hydro-prices/
-├── README.md
-├── requirements.txt
-├── .env.example                    # Template for API keys
-├── .github/workflows/tests.yml     # CI: pytest on push/PR
+├── README.md  METHODS.md  DATA_PROVENANCE.md
+├── requirements.txt  requirements-lock.txt  .env.example
+├── .github/workflows/tests.yml        # CI: pytest on push/PR
 ├── data/
-│   ├── raw/                        # Cached source data (regenerable)
-│   ├── processed/panel.csv         # Yearly analysis panel
-│   └── sample/sample_panel.csv     # Demo data (no fetch needed)
+│   ├── raw/                           # cached source data (regenerable)
+│   ├── processed/panel.csv            # yearly panel
+│   └── sample/sample_panel.csv        # demo data (no fetch)
 ├── src/
-│   ├── fetch_cdec.py               # CDEC snow courses (1980+)
-│   ├── fetch_caiso_oasis.py        # CAISO LMP + fuel mix + 2016-18 archive
-│   ├── fetch_eia.py                # EIA-930 CISO hydro
-│   ├── fetch_controls.py           # Demand, temperature, gas (confounders)
-│   ├── features.py                 # Yearly + monthly panels
-│   ├── models.py                   # Baselines, walk-forward, DM, mediation
-│   └── run_pipeline.py             # End-to-end orchestration
-├── notebooks/                      # Executed analysis notebooks
-├── scripts/
-│   ├── make_notebooks.py
-│   ├── make_figures.py             # All README figures
-│   └── make_sample_data.py         # Bundled demo dataset
-├── tests/                          # 17 unit tests
-└── results/
-    ├── figures/                    # 8 publication-quality figures
-    ├── walkforward_rmse.csv
-    └── results.json
+│   ├── fetch_cdec.py                  # CDEC snow (1980+)
+│   ├── fetch_caiso_oasis.py           # CAISO LMP + fuel mix + 2016-18 archive
+│   ├── fetch_eia.py                   # EIA-930 hydro
+│   ├── fetch_controls.py              # demand, temperature, gas
+│   ├── features.py                    # yearly + monthly panels
+│   ├── models.py                      # baselines, walk-forward, DM, mediation, LOO
+│   └── run_pipeline.py                # end-to-end
+├── notebooks/                         # executed analysis notebooks
+├── scripts/                           # figure/notebook/sample generators
+├── tests/                             # 20 unit tests
+└── results/                           # figures, RMSE tables, results.json
 ```
 
 ---
 
-## 🔮 Extension Roadmap
+## Extension roadmap
 
-| Priority | Extension | Impact |
-|:---------|:----------|:-------|
-| **P0** | Fill the 2019–2022 CAISO price gap | Continuous 10-year window; conclusive walk-forward |
-| **P1** | Add demand + gas controls to panel (EIA key) | Addresses confounding; `fetch_controls.py` ready |
-| **P2** | Monthly mediation on 24-observation panel | 4× statistical power |
-| **P3** | Bayesian mediation with credible intervals | Rigorous small-sample inference |
-
----
-
-## 📚 References
-
-- Baron, R. M., & Kenny, D. A. (1986). The moderator-mediator variable distinction. *JPSP*, 51(6), 1173-1182.
-- Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy. *JBES*, 13(3), 253-263.
-- Newey, W. K., & West, K. D. (1987). A simple, positive semi-definite HAC covariance matrix. *Econometrica*, 55(3), 703-708.
+| Priority | Extension |
+|---|---|
+| P0 | Fill the 2019–2022 price gap (continuous 10-yr window) |
+| P1 | Demand + gas controls into the panel (EIA key) |
+| P2 | Monthly mediation on the 24-observation panel |
+| P3 | Bayesian mediation with credible intervals |
 
 ---
 
-<div align="center">
+## References
 
-**Built with ❤️ by [namit1333](https://github.com/namit1333)**
+- Baron, R. M., & Kenny, D. A. (1986). The moderator-mediator variable
+  distinction in social psychological research. *JPSP*, 51(6), 1173-1182.
+- Diebold, F. X., & Mariano, R. S. (1995). Comparing predictive accuracy.
+  *JBES*, 13(3), 253-263.
+- Newey, W. K., & West, K. D. (1987). A simple, positive semi-definite,
+  heteroskedasticity and autocorrelation consistent covariance matrix.
+  *Econometrica*, 55(3), 703-708.
 
-*This project investigates — but does not conclusively establish — a causal link between snowpack and electricity prices. The snowpack → hydro relationship is statistically established; the downstream price effect remains an open question with 6 years of price data.*
+---
 
-</div>
+*This project investigates — but does not conclusively establish — a causal
+link between snowpack and electricity prices. The snowpack → hydro relationship
+is strongly supported; the downstream price effect remains an open question
+with six years of price data.*
