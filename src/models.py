@@ -227,18 +227,47 @@ def first_stage(panel: pd.DataFrame, mediator: str = "hydro_gwh") -> dict:
 
     This is the leg that has real sample size once price history is short:
     snowpack and hydro output both exist for many more years than prices.
+
+    Returns the slope with a 95% CI and a leave-one-out (LOO) robustness
+    sweep: with n=8 the headline slope could hinge on one influential year,
+    so we re-fit dropping each year and report the range of slopes/p-values.
     """
     df = panel[[mediator, "snowpack_pct"]].dropna()
     if len(df) < 5:
         return {"n": len(df), "error": "not enough years"}
     X = np.column_stack([np.ones(len(df)), df["snowpack_pct"].values])
     fit = OLS(df[mediator].values, X).fit()
+    slope, se = float(fit.params[1]), float(fit.bse[1])
+    ci_lo, ci_hi = slope - 1.96 * se, slope + 1.96 * se
+
+    # Leave-one-out: re-fit dropping each year in turn
+    loo = []
+    for y in df.index:
+        sub = df.drop(index=y)
+        Xs = np.column_stack([np.ones(len(sub)), sub["snowpack_pct"].values])
+        f = OLS(sub[mediator].values, Xs).fit()
+        loo.append({
+            "dropped_year": int(y),
+            "slope": float(f.params[1]),
+            "p_value": float(f.pvalues[1]),
+        })
+    loo_slopes = np.array([r["slope"] for r in loo])
+    loo_ps = np.array([r["p_value"] for r in loo])
+
     return {
         "n": len(df),
-        "slope_gwh_per_pct": float(fit.params[1]),
+        "slope_gwh_per_pct": slope,
+        "ci95_lo": ci_lo,
+        "ci95_hi": ci_hi,
         "p_value": float(fit.pvalues[1]),
         "r2": float(fit.rsquared),
         "pearson_r": float(np.corrcoef(df["snowpack_pct"], df[mediator])[0, 1]),
+        "loo_slope_min": float(loo_slopes.min()),
+        "loo_slope_max": float(loo_slopes.max()),
+        "loo_p_min": float(loo_ps.min()),
+        "loo_p_max": float(loo_ps.max()),
+        "loo_sign_consistent": bool((loo_slopes > 0).all() and (loo_ps < 0.10).all()),
+        "loo": loo,
     }
 
 

@@ -29,13 +29,13 @@
 
 <div align="center">
 
-> **A 10 percentage-point increase in April 1 snowpack is associated with approximately 250 GWh more summer hydro generation**
+> **Physical mechanism confirmed — market effect inconclusive with current data.**
 >
-> *p = 0.022, R² = 0.61, n = 8 years — confirmed by two independent data sources*
+> The snowpack → hydro link is statistically established (+24.9 GWh per +1 pp, p = 0.022, n = 8, cross-validated across two independent data sources). The tradeable downstream signal — snowpack → electricity prices — is **not yet established** with 6 years of price data: no model beats a persistence baseline out-of-sample.
 
 </div>
 
-⚠️ **Important limitation:** The price window is **6 years** (2016–18 + 2023–25, with a 2019–22 gap in public records). Walk-forward forecasts now have **3 genuinely held-out years**, but that is still too few for conclusive inference on the price legs. The snowpack → hydro relationship, however, is robust across 8 years.
+⚠️ **Important limitation:** The price window is **6 years** (2016–18 + 2023–25, with a 2019–22 gap in public records). Walk-forward forecasts have **3 genuinely held-out years** (2023–25), but that is still too few for conclusive inference on the price legs. Everything reported for the price side is labeled *illustrative/exploratory*; the hydro-side result is the robust finding.
 
 ---
 
@@ -55,10 +55,10 @@ This project investigates whether the well-established physical link (snow → w
 
 | Question | Finding | Significance |
 |:---------|:--------|:-------------|
-| **Does snowpack predict hydro output?** | ✅ Yes — +24.9 GWh per +1 pp of snowpack | p = 0.022 (n = 8) |
-| **Is the relationship reproducible?** | ✅ Yes — EIA-930 independent source agrees | +27.0 GWh/pp, p = 0.052 (n = 6) |
+| **Does snowpack predict hydro output?** | ✅ Yes — +24.9 GWh per +1 pp | 95% CI [8.9, 40.8]; p = 0.022 (n = 8) |
+| **Is the relationship reproducible?** | ✅ Yes — EIA-930 independent source agrees | +27.0 GWh/pp (n = 6) |
 | **Does snowpack predict price volatility?** | ⚠️ Inconclusive — 3 held-out years | DM p = 0.052 (hourly vol, vs 3-yr mean) |
-| **Does hydro mediate the snowpack→price link?** | ⚠️ Exploratory — insufficient observations | Proportion mediated ≈ 0.58 (n ≤ 6) |
+| **Does hydro mediate the snowpack→price link?** | ⚠️ Exploratory — insufficient observations | Sobel test uninformative at n ≤ 6; not reported as a point estimate |
 
 ---
 
@@ -86,12 +86,14 @@ This project investigates whether the well-established physical link (snow → w
   <img src="results/figures/hydro_vs_snowpack.png" alt="Hydro vs Snowpack" width="650">
 </div>
 
-| Data Source | Slope (GWh/pp) | p-value | R² | Pearson r | n |
-|:------------|:---------------|:--------|:---|:----------|:--|
-| **CAISO fuel mix** | **+24.9** | **0.022** | 0.61 | 0.78 | 8 |
-| EIA-930 (independent) | +27.0 | 0.052 | 0.65 | 0.81 | 6 |
+| Data Source | Slope (GWh/pp) | 95% CI | p-value | R² | Pearson r | n |
+|:------------|:---------------|:-------|:--------|:---|:----------|:--|
+| **CAISO fuel mix** | **+24.9** | **[8.9, 40.8]** | **0.022** | 0.61 | 0.78 | 8 |
+| EIA-930 (independent) | +27.0 | [7.7, 46.3] | 0.052 | 0.65 | 0.81 | 6 |
 
 > A 10-pp rise in April 1 snowpack ⇒ ≈ **+250 GWh of summer hydro** — roughly 3% of a typical CAISO summer hydro output. This relationship is statistically significant and consistent across two independent measurement systems.
+
+**Leave-one-out robustness** (n = 8 is small enough that one influential year could move the result): re-fitting while dropping each year in turn keeps the CAISO slope **positive in all 8 fits** (range +19.8 to +40.8 GWh/pp, all p < 0.07), so the result is not driven by a single year.
 
 ### 2. The Price Question (6-Year Window, Still Inconclusive)
 
@@ -120,13 +122,15 @@ This project investigates whether the well-established physical link (snow → w
 
 > **Interpretation:** With three genuinely held-out years, **no model beats simple persistence** — the price signal from snowpack is not yet detectable. The wettest year (2023, snowpack ≈ 236%) had the *highest* volatility, opposite to the hypothesized direction. The Diebold-Mariano test (hourly volatility vs trailing-mean baseline) reaches **p = 0.052** — suggestive but not conclusive.
 
+**A note on multiple comparisons:** the near-threshold p-values (0.022, 0.052, 0.052) come from a small set of *pre-specified* tests — one first-stage slope, one walk-forward comparison per baseline, one DM test per baseline — not from searching many models and reporting the best. Still, at n ≤ 8 these should be read as **exploratory evidence, not confirmatory**. The hydro result survives a leave-one-out sweep; the price result does not, which is exactly why it is labeled inconclusive.
+
 ### 3. Mediation Analysis (Exploratory Only)
 
 <div align="center">
   <img src="results/figures/mediation_diagram.png" alt="Mediation Diagram" width="650">
 </div>
 
-The Baron-Kenny decomposition suggests ~58% of the snowpack effect may be mediated through hydro — but this is **explicitly exploratory**: with n ≤ 6 overlapping years, the Sobel test is not informative (p ≈ 1.00). Kept in the repo because the decomposition is instructive, **not** as evidence.
+The Baron-Kenny decomposition is reported in the detailed section only, **not** as a headline point estimate: with n ≤ 6 overlapping years the Sobel test is uninformative (p ≈ 1.00), so the proportion-mediated figure carries no statistical weight. Kept in the repo because the decomposition is instructive, **not** as evidence. Rerun at full power when the price archive is complete.
 
 ### 4. Monthly Panel — The Power Boost
 

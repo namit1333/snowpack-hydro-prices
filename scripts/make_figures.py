@@ -329,13 +329,13 @@ def mediation_diagram(p: pd.DataFrame):
             ha="center", fontsize=10, color=GRAY, fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor=GRAY))
 
-    # Baron-Kenny summary at bottom
+    # Baron-Kenny summary at bottom — the point estimate is deliberately NOT
+    # headlined: at n <= 6 the Sobel test is uninformative (p ~ 1.00), so the
+    # proportion-mediated figure carries no statistical weight.
     ax.text(0.52, 0.06,
-            "Baron-Kenny decomposition: proportion mediated = 1 \u2212 c\u2032/c = "
-            f"{med['proportion_mediated']:.2f}\n"
-            "Sobel z = "
-            f"{med['sobel_z']:.2f} (p = {med['sobel_p']:.2f})\n"
-            "EXPLORATORY: insufficient observations for inference (n \u2264 6)",
+            "Baron-Kenny decomposition: EXPLORATORY \u2014 insufficient observations\n"
+            "for inference (n \u2264 6). Sobel test uninformative;\n"
+            "proportion-mediated NOT reported as a point estimate.",
             ha="center", fontsize=9.5, color=GRAY,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="#f9f9f9", alpha=0.9, edgecolor=GRAY))
 

@@ -101,16 +101,21 @@ rows = {
     'a path: snowpack -> hydro':                 med['a_path'],
     'b path: hydro -> volatility (joint)':       med['b_mediator'],
     "direct effect (c'), snowpack | hydro":      med['direct_effect_cp'],
-    "proportion mediated (1 - c'/c)":           med['proportion_mediated'],
 }
 for k, v in rows.items():
     print(f'{k:48s} {v:+.3f}')
 print(f"\\nSobel test of indirect effect: z={med['sobel_z']:.2f}, "
-      f"p={med['sobel_p']:.3f} (n={med['n']})")"""),
+      f"p={med['sobel_p']:.3f} (n={med['n']})")
+print()
+print('NOTE: at n <= 6 the Sobel test is uninformative (p ~ 1.00); the')
+print('proportion-mediated figure is NOT reported as a point estimate here.')"""),
         md("""**Causal-chain check:** if the snowpack effect runs *through* hydro,
 then adding hydro to the regression should shrink the direct snowpack
-coefficient (`c'` close to 0) while hydro keeps a significant `b` coefficient,
-and the proportion mediated should be large.
+coefficient (`c'` close to 0) while hydro keeps a significant `b` coefficient.
+
+**This analysis is EXPLORATORY** -- with n <= 6 overlapping years the Sobel
+test is uninformative, so the proportion-mediated figure carries no statistical
+weight. It is kept only to illustrate the decomposition, not as evidence.
 
 > Mediation takeaway: fill in after running.""") ,
     ]
@@ -166,9 +171,11 @@ ax.legend(); plt.tight_layout(); plt.show()"""),
 
 def main() -> None:
     NB_DIR.mkdir(exist_ok=True)
-    (NB_DIR / "01_eda.ipynb").write_text(nbf.writes(build_eda(), version=4))
-    (NB_DIR / "02_mediation_analysis.ipynb").write_text(nbf.writes(build_mediation(), version=4))
-    (NB_DIR / "03_walkforward_backtest.ipynb").write_text(nbf.writes(build_walkforward(), version=4))
+    for name, nb in [("01_eda", build_eda()),
+                     ("02_mediation_analysis", build_mediation()),
+                     ("03_walkforward_backtest", build_walkforward())]:
+        (NB_DIR / f"{name}.ipynb").write_text(
+            nbf.writes(nb, version=4), encoding="utf-8")
     print(f"wrote notebooks to {NB_DIR}")
 
 
