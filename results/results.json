@@ -1,0 +1,84 @@
+{
+  "correlations": [
+    {
+      "target": "price_mean",
+      "pearson_r": 0.992,
+      "spearman_rho": 0.5,
+      "n": 3
+    },
+    {
+      "target": "price_peak",
+      "pearson_r": 0.996,
+      "spearman_rho": 1.0,
+      "n": 3
+    },
+    {
+      "target": "price_vol",
+      "pearson_r": 0.969,
+      "spearman_rho": 1.0,
+      "n": 3
+    },
+    {
+      "target": "price_vol_hourly",
+      "pearson_r": 0.943,
+      "spearman_rho": 1.0,
+      "n": 3
+    }
+  ],
+  "n_oos_price_vol": 1,
+  "illustrative_price_vol": true,
+  "dm_price_vol": {},
+  "n_oos_price_vol_hourly": 1,
+  "illustrative_price_vol_hourly": true,
+  "dm_price_vol_hourly": {},
+  "first_stage_hydro_gwh": {
+    "n": 8,
+    "slope_gwh_per_pct": 24.880021156975673,
+    "p_value": 0.022213686559705542,
+    "r2": 0.6095283325247278,
+    "pearson_r": 0.7807229550389354
+  },
+  "first_stage_hydro_gwh_eia": {
+    "n": 6,
+    "slope_gwh_per_pct": 26.966188027469755,
+    "p_value": 0.05186497582092804,
+    "r2": 0.6525292761634669,
+    "pearson_r": 0.8077928423571648
+  },
+  "mediation_hydro_gwh": {
+    "n": 3,
+    "total_effect_c": 0.11682904969162294,
+    "p_total": 0.15945909348839046,
+    "a_path": 11.598980438870559,
+    "p_a": 0.26303880356271303,
+    "b_mediator": 0.005878005063233805,
+    "p_b": NaN,
+    "direct_effect_cp": 0.04865018394359182,
+    "p_direct": NaN,
+    "proportion_mediated": 0.5835780221442628,
+    "r2_joint": 1.0,
+    "r2_total": 0.9385620311266106,
+    "indirect_effect": 0.068178865748031,
+    "sobel_z": 0.0,
+    "sobel_p": 1.0,
+    "illustrative": true
+  },
+  "mediation_hydro_gwh_eia": {
+    "n": 3,
+    "total_effect_c": 0.11682904969162294,
+    "p_total": 0.15945909348839046,
+    "a_path": 11.647309414177416,
+    "p_a": 0.2707516173598467,
+    "b_mediator": 0.005665941177437743,
+    "p_b": NaN,
+    "direct_effect_cp": 0.05083607967547689,
+    "p_direct": NaN,
+    "proportion_mediated": 0.5648678148999613,
+    "r2_joint": 1.0,
+    "r2_total": 0.9385620311266106,
+    "indirect_effect": 0.0659929700161461,
+    "sobel_z": 0.0,
+    "sobel_p": 1.0,
+    "illustrative": true
+  }
+}

@@ -1,0 +1,6 @@
+model,rmse,mae,n
+augmented_ols,5.371,5.371,1
+augmented_arimax,7.028,7.028,1
+baseline_arima,7.028,7.028,1
+baseline_naive,7.028,7.028,1
+baseline_mean3,13.497,13.497,1
