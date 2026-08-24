@@ -69,3 +69,32 @@ def test_summer_hydro_gwh():
 def test_summer_hydro_empty():
     out = features.summer_hydro(pd.DataFrame())
     assert out.empty and "hydro_gwh" in out.columns
+
+
+def test_build_monthly_panel_schema(tmp_path, monkeypatch):
+    # Point RAW_DIR at a temp dir with a minimal price file and confirm the
+    # monthly panel has the right shape (one row per year-month).
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    times = pd.date_range("2020-06-01", periods=48, freq="h", tz="UTC")
+    prices = pd.DataFrame({"time": times, "hub": "H", "price": np.linspace(20, 80, 48)})
+    prices.to_csv(raw / "caiso_prices_2020.csv", index=False)
+    monkeypatch.setattr(features, "RAW_DIR", raw)
+    out = features.build_monthly_panel()
+    assert not out.empty
+    assert {"year", "month", "price_vol"}.issubset(out.columns)
+    assert out["month"].isin([6, 7, 8, 9]).all()
+
+
+def test_temperature_summary(tmp_path, monkeypatch):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    days = pd.date_range("2020-06-01", periods=30, freq="D")
+    t = pd.DataFrame({"date": days, "temp_max_c": np.concatenate([np.full(25, 35.0), np.full(5, 40.0)])})
+    t.to_csv(raw / "heat_temperature_2020.csv", index=False)
+    from src import fetch_controls as fc
+    monkeypatch.setattr(fc, "RAW_DIR", raw)
+    d = pd.read_csv(raw / "heat_temperature_2020.csv", parse_dates=["date"])
+    summ = fc.temperature_summary(d)
+    assert summ.iloc[0]["temp_mean_c"] == pytest.approx(35.833, abs=0.01)
+    assert summ.iloc[0]["heat_days_38c"] == 5

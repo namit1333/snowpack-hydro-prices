@@ -2,35 +2,67 @@
   "correlations": [
     {
       "target": "price_mean",
-      "pearson_r": 0.992,
-      "spearman_rho": 0.5,
-      "n": 3
+      "pearson_r": 0.594,
+      "spearman_rho": 0.257,
+      "n": 6
     },
     {
       "target": "price_peak",
-      "pearson_r": 0.996,
-      "spearman_rho": 1.0,
-      "n": 3
+      "pearson_r": 0.547,
+      "spearman_rho": 0.371,
+      "n": 6
     },
     {
       "target": "price_vol",
-      "pearson_r": 0.969,
-      "spearman_rho": 1.0,
-      "n": 3
+      "pearson_r": 0.509,
+      "spearman_rho": 0.371,
+      "n": 6
     },
     {
       "target": "price_vol_hourly",
-      "pearson_r": 0.943,
-      "spearman_rho": 1.0,
-      "n": 3
+      "pearson_r": 0.488,
+      "spearman_rho": 0.371,
+      "n": 6
     }
   ],
-  "n_oos_price_vol": 1,
+  "n_oos_price_vol": 3,
   "illustrative_price_vol": true,
-  "dm_price_vol": {},
-  "n_oos_price_vol_hourly": 1,
+  "dm_price_vol": {
+    "baseline_naive": {
+      "dm": 0.11647700892248418,
+      "p": 0.9072745062838137,
+      "n": 3
+    },
+    "baseline_mean3": {
+      "dm": -1.2078945479254246,
+      "p": 0.22708782699375696,
+      "n": 3
+    },
+    "baseline_arima": {
+      "dm": 0.11647700892248418,
+      "p": 0.9072745062838137,
+      "n": 3
+    }
+  },
+  "n_oos_price_vol_hourly": 3,
   "illustrative_price_vol_hourly": true,
-  "dm_price_vol_hourly": {},
+  "dm_price_vol_hourly": {
+    "baseline_naive": {
+      "dm": -0.08821045173435325,
+      "p": 0.929709410418446,
+      "n": 3
+    },
+    "baseline_mean3": {
+      "dm": -1.9465051775332811,
+      "p": 0.05159408661600115,
+      "n": 3
+    },
+    "baseline_arima": {
+      "dm": -0.08821045173435325,
+      "p": 0.929709410418446,
+      "n": 3
+    }
+  },
   "first_stage_hydro_gwh": {
     "n": 8,
     "slope_gwh_per_pct": 24.880021156975673,
@@ -46,22 +78,23 @@
     "pearson_r": 0.8077928423571648
   },
   "mediation_hydro_gwh": {
-    "n": 3,
-    "total_effect_c": 0.11682904969162294,
-    "p_total": 0.15945909348839046,
-    "a_path": 11.598980438870559,
-    "p_a": 0.26303880356271303,
-    "b_mediator": 0.005878005063233805,
-    "p_b": NaN,
-    "direct_effect_cp": 0.04865018394359182,
-    "p_direct": NaN,
-    "proportion_mediated": 0.5835780221442628,
-    "r2_joint": 1.0,
-    "r2_total": 0.9385620311266106,
-    "indirect_effect": 0.068178865748031,
-    "sobel_z": 0.0,
-    "sobel_p": 1.0,
-    "illustrative": true
+    "n": 4,
+    "total_effect_c": 0.061586074335418656,
+    "p_total": 0.4813856139775861,
+    "a_path": 10.546072757167941,
+    "p_a": 0.09016164659038765,
+    "b_mediator": 0.012923140558414195,
+    "p_b": 0.580566951621219,
+    "direct_effect_cp": -0.07470230624472557,
+    "p_direct": 0.7654155555229198,
+    "proportion_mediated": 2.2129739888577973,
+    "r2_joint": 0.5429489825839202,
+    "r2_total": 0.2689608813894053,
+    "indirect_effect": 0.13628838058014403,
+    "sobel_z": 0.7511903114768494,
+    "sobel_p": 0.45253813014249045,
+    "illustrative": true,
+    "status": "exploratory \u2014 insufficient observations for inference"
   },
   "mediation_hydro_gwh_eia": {
     "n": 3,
@@ -79,6 +112,7 @@
     "indirect_effect": 0.0659929700161461,
     "sobel_z": 0.0,
     "sobel_p": 1.0,
-    "illustrative": true
+    "illustrative": true,
+    "status": "exploratory \u2014 insufficient observations for inference"
   }
 }

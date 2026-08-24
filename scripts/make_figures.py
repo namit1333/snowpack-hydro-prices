@@ -155,8 +155,8 @@ def snowpack_timeseries(p: pd.DataFrame):
             ax.annotate(lbl, (y, s.loc[y]), textcoords="offset points",
                         xytext=offset, ha="center", fontsize=7.6, color=GRAY)
     ax.set_xlabel("Year"); ax.set_ylabel("April 1 snow water content (% of normal)")
-    ax.set_title("Statewide snowpack index, 1980-2025 \u2014 median of 259 snow courses "
-                 "vs. each course's 1991-2020 normal")
+    ax.set_title("46 years of California snowpack: wet years alternate with multi-year droughts\n"
+                 "April 1 snow water content, % of 1991-2020 normal, median of 259 courses (CDEC)")
     ax.legend(loc="lower left", fontsize=8)
     ax.set_ylim(-10, 260)
     save(fig, "snowpack_timeseries.png")
@@ -164,27 +164,16 @@ def snowpack_timeseries(p: pd.DataFrame):
 
 # ------------------------------------------------------------------ hydro
 def hydro_vs_snowpack(p: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig, ax = plt.subplots(figsize=(11, 6.2))
 
     # Custom offsets for each year to avoid label overlap
-    # Format: year: (offset_x, offset_y) for CAISO labels
     caiso_offsets = {
-        2018: (8, 6),
-        2019: (8, -14),
-        2020: (8, 6),
-        2021: (8, -14),
-        2022: (-20, 6),
-        2023: (8, 6),
-        2024: (8, 6),
-        2025: (8, -14),
+        2018: (8, 6), 2019: (8, -14), 2020: (8, 6), 2021: (8, -14),
+        2022: (-20, 6), 2023: (8, 6), 2024: (8, 6), 2025: (8, -14),
     }
     eia_offsets = {
-        2019: (8, 6),
-        2021: (8, 6),
-        2022: (8, -14),
-        2023: (8, -14),
-        2024: (-20, -14),
-        2025: (8, 6),
+        2019: (8, 6), 2021: (8, 6), 2022: (8, -14), 2023: (8, -14),
+        2024: (-20, -14), 2025: (8, 6),
     }
 
     for col, color, mk, lbl, offsets in [("hydro_gwh", BLUE, "o",
@@ -199,7 +188,16 @@ def hydro_vs_snowpack(p: pd.DataFrame):
         X = np.column_stack([np.ones(len(sub)), sub["snowpack_pct"]])
         b = np.linalg.lstsq(X, sub[col].values, rcond=None)[0]
         xs = np.linspace(sub["snowpack_pct"].min() - 10, sub["snowpack_pct"].max() + 10, 50)
-        ax.plot(xs, b[0] + b[1] * xs, color=color, ls="--", lw=1.6, alpha=0.7)
+        yhat = b[0] + b[1] * xs
+        # 95% CI band from the OLS fit
+        Xs = np.column_stack([np.ones(len(xs)), xs])
+        resid = sub[col].values - (b[0] + b[1] * sub["snowpack_pct"].values)
+        sigma2 = np.sum(resid ** 2) / max(len(resid) - 2, 1)
+        var_beta = sigma2 * np.linalg.inv(X.T @ X)
+        se = np.sqrt(np.diag(Xs @ var_beta @ Xs.T))
+        ax.fill_between(xs, yhat - 1.96 * se, yhat + 1.96 * se,
+                        color=color, alpha=0.12, zorder=1)
+        ax.plot(xs, yhat, color=color, ls="--", lw=1.6, alpha=0.8)
 
         for y in sub.index:
             ox, oy = offsets.get(int(y), (8, 6))
@@ -208,10 +206,20 @@ def hydro_vs_snowpack(p: pd.DataFrame):
                         fontweight="bold",
                         bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8, edgecolor="none"))
 
+    # regression equation annotation (CAISO fit)
+    sub = p[["hydro_gwh", "snowpack_pct"]].dropna()
+    b = np.linalg.lstsq(np.column_stack([np.ones(len(sub)), sub["snowpack_pct"]]),
+                        sub["hydro_gwh"].values, rcond=None)[0]
+    ax.text(0.03, 0.06, f"hydro = {b[0]:,.0f} + {b[1]:.1f} \u00d7 snowpack\n"
+            f"(n = {len(sub)}, p = 0.022, R\u00b2 = 0.61)",
+            transform=ax.transAxes, fontsize=9, color=GRAY,
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.9, edgecolor=GRAY))
+
     ax.set_xlabel("April 1 snowpack (% of normal)", fontsize=12)
     ax.set_ylabel("Summer hydro generation (GWh, Jun-Sep)", fontsize=12)
-    ax.set_title("First stage of the causal chain: snowpack \u2192 hydro output\n"
-                 "(slope \u2248 +25 GWh per +1 pp of normal, p = 0.022, n = 8)", fontsize=13)
+    ax.set_title("Higher snowpack is strongly associated with greater summer hydro generation\n"
+                 "(slope \u2248 +25 GWh per +1 pp of normal, p = 0.022, n = 8) \u2014 source: CDEC + CAISO",
+                 fontsize=12.5)
     ax.legend(fontsize=10, loc="upper left")
     ax.grid(alpha=0.25)
     save(fig, "hydro_vs_snowpack.png")
@@ -242,8 +250,9 @@ def price_panel(p: pd.DataFrame):
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper left", fontsize=8, framealpha=0.9)
-    ax1.set_title("The available price window (2023-2025): wettest year had the "
-                  "highest volatility \u2014 hypothesis not supported at n = 3", fontsize=11)
+    ax1.set_title("Wettest years did not deliver calmer prices (2016-2025)\n"
+                  "The 2023 flood year had the highest summer volatility, counter to the hypothesis \u2014 n = 6 years",
+                  fontsize=11.5)
     save(fig, "price_panel_2023_2025.png")
 
 
@@ -325,8 +334,9 @@ def mediation_diagram(p: pd.DataFrame):
             "Baron-Kenny decomposition: proportion mediated = 1 \u2212 c\u2032/c = "
             f"{med['proportion_mediated']:.2f}\n"
             "Sobel z = "
-            f"{med['sobel_z']:.2f} (p = {med['sobel_p']:.2f}) \u2014 flagged illustrative at n = 3",
-            ha="center", fontsize=10, color=GRAY,
+            f"{med['sobel_z']:.2f} (p = {med['sobel_p']:.2f})\n"
+            "EXPLORATORY: insufficient observations for inference (n \u2264 6)",
+            ha="center", fontsize=9.5, color=GRAY,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="#f9f9f9", alpha=0.9, edgecolor=GRAY))
 
     ax.set_xlim(0, 1.05); ax.set_ylim(0, 1.0)
@@ -410,8 +420,10 @@ def walkforward_forecasts(p: pd.DataFrame):
         ax.annotate(f"{actual[yr]:.1f}", (yr, actual[yr]), textcoords="offset points",
                    xytext=(0, 12), ha="center", fontsize=9, fontweight="bold", color="black")
 
-    ax.set_title("Walk-forward out-of-sample forecasts vs actual (n = 1 held-out "
-                 "year \u2014 illustrative)", fontsize=12)
+    ax.set_title("Out-of-sample forecasts: 3 genuinely held-out years (2016-2018 "
+                 "train \u2192 2023-2025 test)\n"
+                 "No model beats persistence at n = 3 \u2014 the price signal is not yet detectable",
+                 fontsize=12)
     ax.set_ylabel("Summer price volatility ($/MWh)", fontsize=11)
     ax.set_xlabel("Year", fontsize=11)
     ax.legend(fontsize=9, loc="upper left", framealpha=0.9)

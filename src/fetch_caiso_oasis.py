@@ -44,7 +44,7 @@ def fetch_prices(year: int, cache: bool = True) -> pd.DataFrame:
     """Day-ahead hourly LMP for the summer window of `year`, one row per hub-hour."""
     out_path = RAW_DIR / f"caiso_prices_{year}.csv"
     if cache and out_path.exists():
-        return pd.read_csv(out_path, parse_dates=["Time"])
+        return pd.read_csv(out_path, parse_dates=["time"])
     start, end = _summer_window(year)
     caiso = CAISO()
     df = caiso.get_lmp(
@@ -59,6 +59,47 @@ def fetch_prices(year: int, cache: bool = True) -> pd.DataFrame:
         RAW_DIR.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False)
     return df
+
+
+HISTORICAL_URL = (
+    "https://raw.githubusercontent.com/manukalia/CA_Electricty_Price_Prediction_Neural_Net/"
+    "master/data/elec_prices_hrly.csv"
+)
+HISTORICAL_YEARS = [2016, 2017, 2018]  # full summers present in the archive
+
+
+def fetch_historical_prices(cache: bool = True) -> dict[int, pd.DataFrame]:
+    """Day-ahead hourly LMP for 2016-2018 from a public GitHub mirror of OASIS.
+
+    CAISO's OASIS API no longer serves LMP before 2023; this archived CSV
+    (Bayshore node, BAYSHOR2_1_N001) fills the 2016-2018 summers so the price
+    window spans 6 years. Converted to the same [time, hub, price] schema as
+    `fetch_prices`. Returns {year: df}.
+    """
+    import requests
+    out: dict[int, pd.DataFrame] = {}
+    cache_file = RAW_DIR / "caiso_prices_historical_2016_2018.csv"
+    if cache and cache_file.exists():
+        df = pd.read_csv(cache_file, parse_dates=["time"])
+        for y in HISTORICAL_YEARS:
+            out[y] = df[df["time"].dt.year == y].copy()
+        return out
+    print(f"    downloading historical LMP archive ({HISTORICAL_URL}) ...", flush=True)
+    r = requests.get(HISTORICAL_URL, timeout=120)
+    r.raise_for_status()
+    df = pd.read_csv(pd.io.common.BytesIO(r.content))
+    df["time"] = pd.to_datetime(df["start_datetime"], utc=True)
+    df["hub"] = "BAYSHOR"
+    df["price"] = df["dam_price_per_mwh"]
+    df = df[["time", "hub", "price"]].dropna(subset=["price"])
+    # keep only summer months to match the other price files
+    df = df[df["time"].dt.month.isin([6, 7, 8, 9])].copy()
+    if cache:
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        df.to_csv(cache_file, index=False)
+    for y in HISTORICAL_YEARS:
+        out[y] = df[df["time"].dt.year == y].copy()
+    return out
 
 
 def fetch_fuel_mix(year: int, cache: bool = True) -> pd.DataFrame:
@@ -94,7 +135,17 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Fetch CAISO summer prices + fuel mix")
     ap.add_argument("--start", type=int, default=2010)
     ap.add_argument("--end", type=int, default=2025)
+    ap.add_argument("--no-historical", action="store_true",
+                    help="skip the 2016-2018 archived LMP mirror")
     args = ap.parse_args()
+    if not args.no_historical:
+        print("  CAISO historical LMP (2016-2018) ...", flush=True)
+        try:
+            hist = fetch_historical_prices()
+            for y, df in hist.items():
+                print(f"    prices: {len(df):,} rows (year {y})")
+        except Exception as exc:
+            print(f"  (historical LMP unavailable: {exc})")
     for y in range(args.start, args.end + 1):
         res = fetch_year(y)
         print(f"    prices: {len(res['prices']):,} rows, "

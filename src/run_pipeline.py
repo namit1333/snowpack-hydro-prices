@@ -66,12 +66,32 @@ def make_plot(panel: pd.DataFrame, wf: pd.DataFrame) -> str:
 def main(fetch: bool = False) -> None:
     if fetch:
         from src.fetch_cdec import fetch_snow_courses
-        from src.fetch_caiso_oasis import fetch_year
+        from src.fetch_caiso_oasis import fetch_historical_prices, fetch_year
         print("Fetching CDEC snow courses 1980-2025 ...")
         fetch_snow_courses(1980, 2025)
-        print("Fetching CAISO summer prices + fuel mix 2010-2025 ...")
-        for year in range(2010, 2026):
+        print("Fetching CAISO historical LMP (2016-2018 archive) ...")
+        try:
+            fetch_historical_prices()
+        except Exception as exc:
+            print(f"  (historical LMP unavailable: {exc})")
+        print("Fetching CAISO summer prices + fuel mix 2019-2025 ...")
+        for year in range(2019, 2026):
             fetch_year(year)
+        print("Fetching control variables (temperature, demand, gas) ...")
+        try:
+            from src.fetch_controls import fetch_demand, fetch_gas, fetch_temperature
+            for year in range(2016, 2026):
+                fetch_temperature(year)
+                try:
+                    fetch_demand(year)
+                except Exception as exc:
+                    print(f"  (demand {year} unavailable: {exc})")
+                try:
+                    fetch_gas(year)
+                except Exception as exc:
+                    print(f"  (gas {year} unavailable: {exc})")
+        except Exception as exc:
+            print(f"  (controls unavailable: {exc})")
 
     print("Building panel ...")
     panel = build_panel()

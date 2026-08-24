@@ -11,6 +11,11 @@ For each year t the panel contains:
   hydro_gwh          : summer hydroelectric generation (Large + Small hydro, GWh)
   hydro_gwh_eia      : EIA-reported summer CISO hydro generation (GWh), optional
 
+Control variables (confounders) when data is cached:
+  demand_mean_mw / demand_peak_mw : summer CISO demand (EIA-930)
+  temp_mean_c / heat_days_38c     : summer temperature / heat-wave days
+  gas_mean                        : summer Henry Hub natural gas ($/MMBtu)
+
 The volatility targets (price_vol, price_vol_hourly) are what the models predict.
 
 Usage:
@@ -161,21 +166,36 @@ def eia_summer_hydro(hourly: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------- panel
+def _load_prices() -> pd.DataFrame:
+    """Load all cached price files (modern + 2016-2018 archive) with a common
+    US/Pacific-naive timestamp so the two sources join cleanly."""
+    price_files = sorted(RAW_DIR.glob("caiso_prices_*.csv"))
+    price_files = [f for f in price_files if f.name != "caiso_prices_historical_2016_2018.csv"]
+    frames = []
+    for f in price_files:
+        frames.append(pd.read_csv(f, parse_dates=["time"]))
+    hist_path = RAW_DIR / "caiso_prices_historical_2016_2018.csv"
+    if hist_path.exists():
+        frames.append(pd.read_csv(hist_path, parse_dates=["time"]))
+    if not frames:
+        return pd.DataFrame(columns=["time", "hub", "price"])
+    prices = pd.concat(frames, ignore_index=True)
+    prices["time"] = pd.to_datetime(prices["time"], utc=True).dt.tz_convert("US/Pacific")
+    prices["time"] = prices["time"].dt.tz_localize(None)
+    return prices
+
+
 def build_panel() -> pd.DataFrame:
     """Assemble the full yearly panel from cached raw data. Returns empty columns
     for any source that has no cached data (so callers can still build models on
     the subsets that exist)."""
-    snow_path, price_path = RAW_DIR / "snow_courses.csv", None
+    snow_path = RAW_DIR / "snow_courses.csv"
     snow = (
         pd.read_csv(snow_path, parse_dates=["date"])
         if snow_path.exists() else pd.DataFrame(columns=["station_id", "date", "value"])
     )
 
-    price_files = sorted(RAW_DIR.glob("caiso_prices_*.csv"))
-    prices = (
-        pd.concat([pd.read_csv(f, parse_dates=["time"]) for f in price_files], ignore_index=True)
-        if price_files else pd.DataFrame(columns=["time", "hub", "price"])
-    )
+    prices = _load_prices()
     mix_files = sorted(RAW_DIR.glob("caiso_fuelmix_*.csv"))
     fuel = (
         pd.concat([pd.read_csv(f, parse_dates=["Time"]) for f in mix_files], ignore_index=True)
@@ -206,9 +226,111 @@ def build_panel() -> pd.DataFrame:
     if not eia_hourly.empty or not eia_daily.empty:
         panel = panel.join(eia_summer_hydro(eia_hourly, eia_daily).set_index("year"))
 
+    panel = _join_controls(panel)
+
     PROC_DIR.mkdir(parents=True, exist_ok=True)
     panel.to_csv(PROC_DIR / "panel.csv")
     return panel
+
+
+def _join_controls(panel: pd.DataFrame) -> pd.DataFrame:
+    """Join annual summer control-variable summaries when raw files are cached."""
+    from src.fetch_controls import (
+        demand_summary, gas_summary, temperature_summary,
+    )
+
+    demand_files = sorted(RAW_DIR.glob("eia_ciso_demand_*.csv"))
+    if demand_files:
+        d = pd.concat([pd.read_csv(f, parse_dates=["period"]) for f in demand_files],
+                      ignore_index=True)
+        panel = panel.join(demand_summary(d).set_index("year"))
+
+    temp_files = sorted(RAW_DIR.glob("heat_temperature_*.csv"))
+    if temp_files:
+        t = pd.concat([pd.read_csv(f, parse_dates=["date"]) for f in temp_files],
+                      ignore_index=True)
+        panel = panel.join(temperature_summary(t).set_index("year"))
+
+    gas_files = sorted(RAW_DIR.glob("gas_henryhub_*.csv"))
+    if gas_files:
+        g = pd.concat([pd.read_csv(g, parse_dates=["date"]) for g in gas_files],
+                      ignore_index=True)
+        panel = panel.join(gas_summary(g).set_index("year"))
+    return panel
+
+
+def build_monthly_panel() -> pd.DataFrame:
+    """Monthly summer panel: one row per (year, month) of the Jun-Sep window.
+
+    Gives ~4x the observations of the annual panel for the price legs, which is
+    the natural next step for power once the price history grows. Columns:
+      year, month, snowpack_pct (annual, repeated), hydro_gwh (monthly),
+      price_mean, price_vol (monthly), demand_mean_mw (monthly), temp_mean_c,
+      gas_mean (annual, repeated).
+    """
+    panel = build_panel()
+    prices = _load_prices()
+    if prices.empty:
+        return pd.DataFrame()
+    prices["year"] = prices["time"].dt.year
+    prices["month"] = prices["time"].dt.month
+    prices["date"] = prices["time"].dt.date
+
+    daily = prices.groupby(["date", "hub"])["price"].mean().reset_index()
+    daily = daily.groupby("date")["price"].mean().rename("daily_price").reset_index()
+    daily["date"] = pd.to_datetime(daily["date"])
+    daily["year"] = daily["date"].dt.year
+    daily["month"] = daily["date"].dt.month
+    monthly_price = daily.groupby(["year", "month"]).agg(
+        price_mean=("daily_price", "mean"),
+        price_vol=("daily_price", "std"),
+    ).reset_index()
+
+    out = monthly_price.copy()
+    if "snowpack_pct" in panel.columns:
+        out = out.merge(
+            panel[["snowpack_pct"]], left_on="year", right_index=True, how="left")
+
+    mix_files = sorted(RAW_DIR.glob("caiso_fuelmix_*.csv"))
+    if mix_files:
+        fuel = pd.concat([pd.read_csv(f, parse_dates=["Time"]) for f in mix_files],
+                         ignore_index=True)
+        hydro_cols = [c for c in ["Large Hydro", "Small Hydro"] if c in fuel.columns]
+        fuel["hydro_mw"] = fuel[hydro_cols].sum(axis=1, min_count=1)
+        fuel["mwh"] = fuel["hydro_mw"] * (5 / 60)
+        fuel["year"] = fuel["Time"].dt.year
+        fuel["month"] = fuel["Time"].dt.month
+        mh = fuel.groupby(["year", "month"])["mwh"].sum().div(1000).rename("hydro_gwh").reset_index()
+        out = out.merge(mh, on=["year", "month"], how="left")
+
+    demand_files = sorted(RAW_DIR.glob("eia_ciso_demand_*.csv"))
+    if demand_files:
+        d = pd.concat([pd.read_csv(f, parse_dates=["period"]) for f in demand_files],
+                      ignore_index=True)
+        d["year"] = d["period"].dt.year
+        d["month"] = d["period"].dt.month
+        dm = d.groupby(["year", "month"])["demand_mw"].mean().rename("demand_mean_mw").reset_index()
+        out = out.merge(dm, on=["year", "month"], how="left")
+
+    temp_files = sorted(RAW_DIR.glob("heat_temperature_*.csv"))
+    if temp_files:
+        t = pd.concat([pd.read_csv(f, parse_dates=["date"]) for f in temp_files],
+                      ignore_index=True)
+        t["year"] = t["date"].dt.year
+        t["month"] = t["date"].dt.month
+        tm = t.groupby(["year", "month"])["temp_max_c"].mean().rename("temp_mean_c").reset_index()
+        out = out.merge(tm, on=["year", "month"], how="left")
+
+    gas_files = sorted(RAW_DIR.glob("gas_henryhub_*.csv"))
+    if gas_files:
+        g = pd.concat([pd.read_csv(f, parse_dates=["date"]) for f in gas_files],
+                      ignore_index=True)
+        g["year"] = g["date"].dt.year
+        g["month"] = g["date"].dt.month
+        gm = g.groupby(["year", "month"])["gas_price"].mean().rename("gas_mean").reset_index()
+        out = out.merge(gm, on=["year", "month"], how="left")
+
+    return out.dropna(subset=["price_vol"])
 
 
 if __name__ == "__main__":

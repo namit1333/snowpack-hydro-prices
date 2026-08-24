@@ -23,13 +23,16 @@ from statsmodels.regression.linear_model import OLS
 
 MODELS = ["baseline_naive", "baseline_mean3", "baseline_arima",
           "augmented_ols", "augmented_arimax"]
+CONTROL_MODEL = "augmented_controls"  # snowpack + temp + demand (confounders)
 
 
 # ------------------------------------------------------------ walk-forward
 def _fit_predict(model: str, train: pd.DataFrame, exog_col: str,
-                  x_next: float) -> float | None:
+                  x_next: float, control_cols: list[str] | None = None,
+                  next_row: pd.Series | None = None) -> float | None:
     """Fit `model` on train rows, return one-step-ahead prediction for the
-    next year given the next year's exogenous value x_next."""
+    next year given the next year's exogenous value x_next (and, for the
+    controls model, the next year's observed temperature/demand)."""
     y = train["y"].values
     if model == "baseline_naive":
         return y[-1]
@@ -49,12 +52,35 @@ def _fit_predict(model: str, train: pd.DataFrame, exog_col: str,
             return float(mod.fit().forecast(1, exog=np.array([[x_next]]))[0])
         except Exception:
             return y[-1]
+    if model == CONTROL_MODEL:
+        # snowpack + controls (temperature + demand) — the confounder check.
+        # Uses the *observed* temperature/demand of the held-out year, which
+        # makes this a conditional (what-if) evaluation, not a pure forecast.
+        cols = [exog_col] + [c for c in (control_cols or []) if c in train.columns]
+        cols = [c for c in cols if train[c].notna().all() and len(train[c].unique()) > 1]
+        if len(cols) < 1 or len(train) <= len(cols) + 1:
+            return y[-1]
+        X = np.column_stack([np.ones(len(train))] + [train[c].values for c in cols])
+        x_row = [1.0]
+        for c in cols:
+            if c == exog_col:
+                x_row.append(float(x_next))
+            elif next_row is not None and c in next_row.index:
+                x_row.append(float(next_row[c]))
+            else:
+                x_row.append(float(train[c].iloc[-1]))
+        try:
+            lr = OLS(y, X).fit()
+            return float(lr.predict(np.array([x_row]))[0])
+        except Exception:
+            return y[-1]
     raise ValueError(model)
 
 
 def walk_forward(panel: pd.DataFrame, target: str = "price_vol",
                  exog_col: str = "snowpack_pct",
-                 min_train: int = 6, models: list[str] | None = None) -> pd.DataFrame:
+                 min_train: int = 3, models: list[str] | None = None,
+                 control_cols: list[str] | None = None) -> pd.DataFrame:
     """Expanding-window walk-forward. Returns rows [year, model, pred, actual].
 
     Each year t >= min_train is predicted using only data from t0..t-1
@@ -62,18 +88,26 @@ def walk_forward(panel: pd.DataFrame, target: str = "price_vol",
     window shrinks to the largest size that still leaves >= 1 held-out year
     (the caller can flag such runs as illustrative). Returns an empty frame if
     fewer than 3 years are available.
+
+    With the 2016-2018 + 2023-2025 price record (6 years), min_train=3 yields
+    three genuine held-out years (2018, 2023, 2024...) rather than one.
     """
-    df = panel[[target, exog_col]].dropna().sort_index()
+    cols = [target, exog_col] + (control_cols or [])
+    df = panel[[c for c in cols if c in panel.columns]].dropna().sort_index()
     df = df.rename(columns={target: "y"})
     if len(df) < 3:
         return pd.DataFrame(columns=["year", "model", "pred", "actual", "error", "sq_error"])
     min_train = min(min_train, max(2, len(df) - 1))
+    all_models = list(MODELS)
+    if control_cols and any(c in df.columns for c in control_cols):
+        all_models.append(CONTROL_MODEL)
     rows = []
-    for model in (models or MODELS):
+    for model in (models or all_models):
         for i in range(min_train, len(df)):
             train = df.iloc[:i]
             next_row = df.iloc[i]
-            pred = _fit_predict(model, train, exog_col, float(next_row[exog_col]))
+            pred = _fit_predict(model, train, exog_col, float(next_row[exog_col]),
+                                control_cols=control_cols, next_row=next_row)
             rows.append({"year": df.index[i], "model": model,
                          "pred": pred, "actual": next_row["y"]})
     out = pd.DataFrame(rows)
@@ -221,7 +255,8 @@ def run_analysis(panel: pd.DataFrame) -> dict:
     for target in ["price_vol", "price_vol_hourly"]:
         if target not in panel.columns or panel[target].notna().sum() < 3:
             continue
-        wf = walk_forward(panel, target=target, min_train=6)
+        ctrl = ["temp_mean_c", "demand_mean_mw"]
+        wf = walk_forward(panel, target=target, min_train=3, control_cols=ctrl)
         out[f"wf_{target}"] = wf
         out[f"rmse_{target}"] = rmse_table(wf)
         n_oos = wf[wf["model"] == "augmented_ols"].shape[0]
@@ -244,10 +279,17 @@ def run_analysis(panel: pd.DataFrame) -> dict:
             out[f"first_stage_{med}"] = first_stage(panel, mediator=med)
 
     # Full mediation on the headline target, with each available mediator
+    # NOTE: with <=6 price years this is *exploratory* — the Sobel test needs
+    # far more observations to be meaningful. Kept in the repo because the
+    # decomposition is informative, but explicitly labeled insufficient for
+    # inference (see README section 7).
     for med in ["hydro_gwh", "hydro_gwh_eia"]:
         if med in panel.columns and panel[med].notna().sum() >= 3:
             med_res = mediation_analysis(panel, mediator=med)
             med_res["illustrative"] = med_res.get("n", 0) < 10
+            med_res["status"] = ("exploratory — insufficient observations for "
+                                  "inference" if med_res.get("n", 0) < 10
+                                  else "preliminary")
             out[f"mediation_{med}"] = med_res
 
     return out

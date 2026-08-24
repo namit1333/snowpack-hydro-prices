@@ -31,7 +31,11 @@ price behavior through hydroelectric generation?
 **Panel (data/processed/panel.csv):** one row per year --
 `snowpack_pct` (April 1 snow water content as % of normal), summer day-ahead
 price features (`price_mean`, `price_peak`, `price_vol`, `price_vol_hourly`),
-and summer hydro generation (`hydro_gwh`, `hydro_gwh_eia`)."""
+summer hydro generation (`hydro_gwh`, `hydro_gwh_eia`), and controls
+(`temp_mean_c`, `heat_days_38c`, `demand_mean_mw`, `gas_mean`).
+
+**Price window:** 2016-2018 + 2023-2025 (6 years; CAISO's public archive has a
+2019-2022 gap). Walk-forward uses min_train=3 -> 3 genuinely held-out years."""
 
 
 def code(src: str) -> dict:
@@ -124,7 +128,7 @@ def build_walkforward() -> nbf.NotebookNode:
 
 panel = pd.read_csv(ROOT / 'data' / 'processed' / 'panel.csv', index_col=0)
 
-wf = walk_forward(panel, target='price_vol', min_train=6)
+wf = walk_forward(panel, target='price_vol', min_train=3)
 rmse_table(wf)"""),
         md("### Diebold-Mariano test: augmented vs each baseline (squared errors)"),        code("""for base in ['baseline_naive', 'baseline_mean3', 'baseline_arima']:
     a = wf[wf.model == 'augmented_ols'].set_index('year').error
@@ -137,6 +141,12 @@ rmse_table(wf)"""),
 print()
 print('First stage: snowpack -> summer hydro output (full record)')
 print(first_stage(panel, mediator='hydro_gwh'))"""),
+        md("### Monthly panel: 4x the observations"),
+        code("""from src.features import build_monthly_panel
+
+mp = build_monthly_panel()
+print(f'monthly rows: {len(mp)}  (vs {len(panel.dropna(subset=["price_vol"]))} annual)')
+mp.dropna(subset=['price_vol']).head(12)"""),
         md("### Forecasts vs actual"),
         code("""fig, ax = plt.subplots(figsize=(11, 4.5))
 for model, color in [('baseline_naive', '#888888'), ('baseline_mean3', '#b0b0b0'),

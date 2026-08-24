@@ -70,3 +70,27 @@ def test_mediation_insufficient_data():
     p = _panel(n=2)
     med = models.mediation_analysis(p)
     assert "error" in med
+
+
+def test_walk_forward_controls_model():
+    p = _panel()
+    p["temp_mean_c"] = 30 + 5 * np.sin(np.arange(len(p))) + 5
+    p["demand_mean_mw"] = 30000 + 2000 * np.cos(np.arange(len(p)))
+    wf = models.walk_forward(p, min_train=6, control_cols=["temp_mean_c", "demand_mean_mw"])
+    assert models.CONTROL_MODEL in wf["model"].unique()
+    assert wf[wf["model"] == models.CONTROL_MODEL]["pred"].notna().all()
+
+
+def test_short_walk_forward_gives_multiple_oos():
+    # the 2016-2018 + 2023-2025 window: 6 rows, min_train=3 -> 3 held-out years
+    p = _panel(n=6)
+    wf = models.walk_forward(p, min_train=3)
+    n_oos = wf[wf["model"] == "augmented_ols"].shape[0]
+    assert n_oos == 3
+
+
+def test_run_analysis_flags_exploratory_mediation():
+    p = _panel(n=6)  # too few years for inference
+    res = models.run_analysis(p)
+    assert any("exploratory" in v.get("status", "") for k, v in res.items()
+               if k.startswith("mediation_"))
