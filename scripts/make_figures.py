@@ -210,9 +210,9 @@ def hydro_vs_snowpack(p: pd.DataFrame):
     sub = p[["hydro_gwh", "snowpack_pct"]].dropna()
     b = np.linalg.lstsq(np.column_stack([np.ones(len(sub)), sub["snowpack_pct"]]),
                         sub["hydro_gwh"].values, rcond=None)[0]
-    ax.text(0.03, 0.06, f"hydro = {b[0]:,.0f} + {b[1]:.1f} \u00d7 snowpack\n"
+    ax.text(0.98, 0.04, f"hydro = {b[0]:,.0f} + {b[1]:.1f} \u00d7 snowpack\n"
             f"(n = {len(sub)}, p = 0.022, R\u00b2 = 0.61)",
-            transform=ax.transAxes, fontsize=9, color=GRAY,
+            transform=ax.transAxes, fontsize=9, color=GRAY, ha="right", va="bottom",
             bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.9, edgecolor=GRAY))
 
     ax.set_xlabel("April 1 snowpack (% of normal)", fontsize=12)
