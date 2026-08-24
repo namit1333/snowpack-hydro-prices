@@ -1,3 +1,6 @@
+# Python 3.10+ required
+python_requires>=3.10
+
 # Core data stack
 pandas>=2.0
 numpy>=1.26

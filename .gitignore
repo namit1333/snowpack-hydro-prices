@@ -1,8 +1,10 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 venv/
+env/
 
 # Freebuff workspace metadata
 .freebuff/
@@ -11,6 +13,8 @@ venv/
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # OS
 .DS_Store
@@ -21,3 +25,9 @@ Thumbs.db
 
 # Secrets — never commit API keys
 .env
+.env.local
+.env.*.local
+
+# Large raw data (regenerable via fetch scripts)
+# Uncomment the next line if you don't want to commit raw data:
+# data/raw/
