@@ -164,42 +164,55 @@ def snowpack_timeseries(p: pd.DataFrame):
 
 # ------------------------------------------------------------------ hydro
 def hydro_vs_snowpack(p: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    for col, color, mk, lbl in [("hydro_gwh", BLUE, "o",
-                                 "CAISO fuel mix (Large+Small hydro)"),
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    # Custom offsets for each year to avoid label overlap
+    # Format: year: (offset_x, offset_y) for CAISO labels
+    caiso_offsets = {
+        2018: (8, 6),
+        2019: (8, -14),
+        2020: (8, 6),
+        2021: (8, -14),
+        2022: (-20, 6),
+        2023: (8, 6),
+        2024: (8, 6),
+        2025: (8, -14),
+    }
+    eia_offsets = {
+        2019: (8, 6),
+        2021: (8, 6),
+        2022: (8, -14),
+        2023: (8, -14),
+        2024: (-20, -14),
+        2025: (8, 6),
+    }
+
+    for col, color, mk, lbl, offsets in [("hydro_gwh", BLUE, "o",
+                                 "CAISO fuel mix (Large+Small hydro)", caiso_offsets),
                                 ("hydro_gwh_eia", GOLD, "s",
-                                 "EIA-930 CISO (WAT)")]:
+                                 "EIA-930 CISO (WAT)", eia_offsets)]:
         sub = p[[col, "snowpack_pct"]].dropna()
         if sub.empty:
             continue
         ax.scatter(sub["snowpack_pct"], sub[col], color=color, marker=mk,
-                   s=70, alpha=0.85, edgecolor="white", label=lbl, zorder=3)
+                   s=80, alpha=0.85, edgecolor="white", linewidth=1.5, label=lbl, zorder=3)
         X = np.column_stack([np.ones(len(sub)), sub["snowpack_pct"]])
         b = np.linalg.lstsq(X, sub[col].values, rcond=None)[0]
-        xs = np.linspace(sub["snowpack_pct"].min() - 5, sub["snowpack_pct"].max() + 5, 50)
-        ax.plot(xs, b[0] + b[1] * xs, color=color, ls="--", lw=1.4, alpha=0.7)
+        xs = np.linspace(sub["snowpack_pct"].min() - 10, sub["snowpack_pct"].max() + 10, 50)
+        ax.plot(xs, b[0] + b[1] * xs, color=color, ls="--", lw=1.6, alpha=0.7)
 
-        # Smart label placement to avoid overlap
-        sorted_idx = sub.sort_values("snowpack_pct").index
-        offsets = []
-        for i, y in enumerate(sorted_idx):
-            # Alternate above/below, shift left/right for close points
-            if i > 0 and abs(sub.loc[y, "snowpack_pct"] - sub.loc[sorted_idx[i-1], "snowpack_pct"]) < 15:
-                offsets.append((6, -10))
-            else:
-                offsets.append((5, 7))
-
-        for i, y in enumerate(sub.index):
-            ox, oy = offsets[i] if i < len(offsets) else (5, 7)
+        for y in sub.index:
+            ox, oy = offsets.get(int(y), (8, 6))
             ax.annotate(str(int(y)), (sub.loc[y, "snowpack_pct"], sub.loc[y, col]),
-                        textcoords="offset points", xytext=(ox, oy), fontsize=8, color=GRAY,
-                        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"))
+                        textcoords="offset points", xytext=(ox, oy), fontsize=9, color=GRAY,
+                        fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8, edgecolor="none"))
 
-    ax.set_xlabel("April 1 snowpack (% of normal)", fontsize=11)
-    ax.set_ylabel("Summer hydro generation (GWh, Jun-Sep)", fontsize=11)
+    ax.set_xlabel("April 1 snowpack (% of normal)", fontsize=12)
+    ax.set_ylabel("Summer hydro generation (GWh, Jun-Sep)", fontsize=12)
     ax.set_title("First stage of the causal chain: snowpack \u2192 hydro output\n"
-                 "(slope \u2248 +25 GWh per +1 pp of normal, p = 0.022, n = 8)", fontsize=12)
-    ax.legend(fontsize=9, loc="upper left")
+                 "(slope \u2248 +25 GWh per +1 pp of normal, p = 0.022, n = 8)", fontsize=13)
+    ax.legend(fontsize=10, loc="upper left")
     ax.grid(alpha=0.25)
     save(fig, "hydro_vs_snowpack.png")
 
@@ -261,70 +274,64 @@ def correlation_heatmap(p: pd.DataFrame):
 def mediation_diagram(p: pd.DataFrame):
     fs = first_stage(p, mediator="hydro_gwh")
     med = mediation_analysis(p, target="price_vol", mediator="hydro_gwh")
-    fig, ax = plt.subplots(figsize=(11, 6.5))
+    fig, ax = plt.subplots(figsize=(12, 7.5))
     ax.axis("off")
 
     def node(x, y, text, w=0.28, h=0.14, fc="#e3e7f7"):
         ax.add_patch(FancyBboxPatch((x - w / 2, y - h / 2), w, h,
                                     boxstyle="round,pad=0.008,rounding_size=0.04",
                                     fc=fc, ec=GRAY, lw=1.3, zorder=2))
-        ax.text(x, y, text, ha="center", va="center", fontsize=10, zorder=3)
+        ax.text(x, y, text, ha="center", va="center", fontsize=11, zorder=3)
 
-    def edge(x1, y1, x2, y2, label, color=GRAY, ls="-", label_pos="above"):
+    def edge(x1, y1, x2, y2, label, color=GRAY, ls="-", label_offset=(0, 0)):
         ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>",
                                      mutation_scale=18, lw=1.8, color=color,
                                      linestyle=ls, zorder=1))
-        mx = (x1 + x2) / 2
-        my = (y1 + y2) / 2
-        if label_pos == "above":
-            ax.text(mx, my + 0.04, label, ha="center", fontsize=9, color=color, fontweight="bold")
-        elif label_pos == "below":
-            ax.text(mx, my - 0.04, label, ha="center", fontsize=9, color=color, fontweight="bold")
-        elif label_pos == "left":
-            ax.text(mx - 0.02, my, label, ha="right", fontsize=9, color=color, fontweight="bold")
-        else:
-            ax.text(mx + 0.02, my, label, ha="left", fontsize=9, color=color, fontweight="bold")
+        mx = (x1 + x2) / 2 + label_offset[0]
+        my = (y1 + y2) / 2 + label_offset[1]
+        ax.text(mx, my, label, ha="center", fontsize=10, color=color, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9, edgecolor=color, linewidth=0.8))
 
     # Nodes - positioned with more spacing
-    node(0.22, 0.75, "Snowpack\n(April 1 % normal)", w=0.30, h=0.14, fc="#dbe9f7")
-    node(0.22, 0.25, "Summer hydro\n(GWh, fuel mix)", w=0.30, h=0.14, fc="#e8f5e3")
-    node(0.78, 0.50, "Summer price volatility\n(std of daily $/MWh)", w=0.32, h=0.14, fc="#f7e3e7")
+    node(0.25, 0.78, "Snowpack\n(April 1 % normal)", w=0.30, h=0.14, fc="#dbe9f7")
+    node(0.25, 0.22, "Summer hydro\n(GWh, fuel mix)", w=0.30, h=0.14, fc="#e8f5e3")
+    node(0.80, 0.50, "Summer price volatility\n(std of daily $/MWh)", w=0.32, h=0.14, fc="#f7e3e7")
 
     # a-path: Snowpack -> Hydro (vertical, left side)
-    edge(0.22, 0.68, 0.22, 0.32,
+    edge(0.25, 0.71, 0.25, 0.29,
          f"a-path: +{fs['slope_gwh_per_pct']:.1f} GWh/pp\np = {fs['p_value']:.3f}  (n = {fs['n']})",
-         color=BLUE, label_pos="left")
+         color=BLUE, label_offset=(-0.12, 0))
 
     # b-path: Hydro -> Price Volatility (diagonal up-right)
-    edge(0.37, 0.30, 0.62, 0.45,
+    edge(0.40, 0.28, 0.64, 0.44,
          f"b-path: +{med['b_mediator']:.4f}\n(n = 3, illustrative)",
-         color=GOLD, label_pos="below")
+         color=GOLD, label_offset=(0, -0.10))
 
     # c'-path: Snowpack -> Price Volatility direct (horizontal)
-    edge(0.37, 0.70, 0.62, 0.55,
+    edge(0.40, 0.72, 0.64, 0.57,
          f"c'-path (direct): +{med['direct_effect_cp']:.3f}",
-         color=RED, ls="--", label_pos="above")
+         color=RED, ls="--", label_offset=(0, 0.06))
 
     # c-path: total effect (curved arrow above)
-    ax.annotate("", xy=(0.78, 0.57), xytext=(0.22, 0.82),
+    ax.annotate("", xy=(0.80, 0.57), xytext=(0.25, 0.85),
                 arrowprops=dict(arrowstyle="-|>", color=GRAY, ls=":",
                                lw=1.5, connectionstyle="arc3,rad=0.15"))
-    ax.text(0.50, 0.88, f"c-path (total): +{med['total_effect_c']:.3f}\np = {med['p_total']:.3f}",
-            ha="center", fontsize=9, color=GRAY, fontweight="bold",
+    ax.text(0.52, 0.92, f"c-path (total): +{med['total_effect_c']:.3f}\np = {med['p_total']:.3f}",
+            ha="center", fontsize=10, color=GRAY, fontweight="bold",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor=GRAY))
 
     # Baron-Kenny summary at bottom
-    ax.text(0.50, 0.06,
+    ax.text(0.52, 0.06,
             "Baron-Kenny decomposition: proportion mediated = 1 \u2212 c\u2032/c = "
             f"{med['proportion_mediated']:.2f}\n"
             "Sobel z = "
             f"{med['sobel_z']:.2f} (p = {med['sobel_p']:.2f}) \u2014 flagged illustrative at n = 3",
-            ha="center", fontsize=9.5, color=GRAY,
+            ha="center", fontsize=10, color=GRAY,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="#f9f9f9", alpha=0.9, edgecolor=GRAY))
 
-    ax.set_xlim(0, 1.0); ax.set_ylim(0, 0.98)
+    ax.set_xlim(0, 1.05); ax.set_ylim(0, 1.0)
     ax.set_title("Mediation path diagram: does hydro explain the snowpack effect?",
-                 fontsize=13, pad=10)
+                 fontsize=14, pad=12)
     save(fig, "mediation_diagram.png")
 
 
