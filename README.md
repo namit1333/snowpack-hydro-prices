@@ -14,10 +14,13 @@ Author: [namit1333](https://github.com/namit1333)
 
 ---
 
-A reproducible causal-chain study: does snowpack predict summer electricity
-price behavior through hydroelectric generation? End-to-end ETL → feature
-engineering → forecasting → statistical inference, from public data, cached,
-unit-tested (31 tests), and reproducibly executable in CI.
+A reproducible quantitative study of a hypothesized causal chain: does
+snowpack predict summer electricity price behavior through hydroelectric
+generation? End-to-end ETL → feature engineering → forecasting → statistical
+inference, from public data, cached, unit-tested (31 tests), and reproducibly
+executable in CI. I built and tested every stage myself; the hypothesized
+mechanism is described in the methodology, and the project explicitly does
+not claim to establish causation (see "Why this is not a causal claim").
 
 Coverage: **46 years** of snowpack (CDEC, 1980–2025) · **8 years** of hydro
 generation (CAISO fuel mix + EIA-930 cross-check) · **6 years** of price
@@ -191,7 +194,8 @@ also why no richer model was added.
 models. The two 0.052 values were independently recomputed and are distinct
 computations (an OLS t-test on n = 6 vs. a Newey–West HAC DM test on n = 3)
 that happen to round to the same figure. At n ≤ 8 these are exploratory
-evidence, not confirmatory.
+evidence, not confirmatory. **I do not interpret p = 0.052 as evidence of
+predictive ability** — at this sample size it is indistinguishable from noise.
 
 **Failed hypothesis, stated plainly:** snowpack-augmented price forecasting did
 not outperform persistence out-of-sample. The physical snowpack → hydro
@@ -222,11 +226,28 @@ is reported anywhere.
 ### 6. Monthly panel
 
 `build_monthly_panel()` produces one row per (year, month) of Jun–Sep — 24
-rows from the 6 price years vs. 6 annual. **This is 4× the row count, not 4×
-the statistical information**: monthly observations within a summer are
-correlated, so effective sample size grows by much less. It is the natural
-next step for the price legs as history grows, with the correlation caveat
-stated up front.
+rows from the 6 price years vs. 6 annual. **This is 4× the number of
+observations, not 4× the statistical power**: monthly observations within a
+summer are correlated, so effective sample size grows by much less than the
+row count. It is the natural next step for the price legs as history grows,
+with within-year dependence to be accounted for (clustered errors or a
+hierarchical model) before any inference.
+
+---
+
+## Validation — every check in one place
+
+| Check | What it guards against | Result |
+|---|---|---|
+| Leave-one-out (n = 8) | One influential year driving the headline | Positive slope in **all 8 fits** (+19.8 to +40.8, all p < 0.07) |
+| Independent EIA-930 source | Single-source measurement error | Consistent slope (+27.0 vs +24.9 GWh/pp) |
+| Permutation test (10,000 shuffles) | Normality assumption at n = 8 | perm p = 0.018 ≈ parametric 0.022 |
+| Bootstrap CI (10,000 resamples) | Parametric interval doing the work | [14.2, 51.8] ≈ t-based [5.0, 44.8] |
+| Specification grid (12 specs) | One arbitrary modeling choice driving the result | **12/12 slopes positive** (+15.0 to +25.5) |
+| Walk-forward vs. persistence | Overfitting / in-sample self-deception | **No model beats persistence** (honest null) |
+| Diebold–Mariano | RMSE differences by chance | Inconclusive at n = 3 OOS — not used for inference |
+| Future-leakage test (automated) | Future data entering training | Verified: corrupting future targets leaves earlier predictions bit-identical |
+| Reproducibility check (CI) | Non-deterministic pipeline | Analysis run twice per push; outputs asserted identical |
 
 ---
 
@@ -275,7 +296,7 @@ RMSE? Why leave-one-out over k-fold at n = 8? Why permutation and bootstrap?
 Why small-sample t-intervals? Why these controls, and why the controls model
 is kept out of the forecast leaderboard?
 
-Each choice is explained in the author's own words in **[METHODS.md](METHODS.md)**.
+Each choice is explained in my own words in **[METHODS.md](METHODS.md)**.
 
 ---
 
@@ -387,8 +408,8 @@ snowpack-hydro-prices/
 |---|---|
 | P0 | Fill the 2019–2022 price gap → ~12+ years, the power analysis's threshold |
 | P1 | Demand + gas controls into the panel (EIA key) |
-| P2 | Monthly mediation on the 24-row panel (with within-summer correlation handling) |
-| P3 | Bayesian mediation with credible intervals |
+| P2 | Monthly evaluation on the 24-row panel, with within-year dependence handled (clustered errors) |
+| P3 | Larger out-of-sample evaluation as price history grows — not new model classes; more data, not more machinery |
 
 ---
 
@@ -406,8 +427,7 @@ snowpack-hydro-prices/
 
 ---
 
-*This project investigates — but does not conclusively establish — a causal
-link between snowpack and electricity prices. The snowpack → hydro relationship
-is strongly supported and robust across specifications; the downstream price
-effect remains an open question that the current 6-year price window is
-underpowered to resolve.*
+*This project investigates a hypothesized relationship — it does not claim to
+establish one. The snowpack → hydro relationship is strongly supported and
+robust across specifications; the downstream price effect remains an open
+question that the current 6-year price window is underpowered to resolve.*

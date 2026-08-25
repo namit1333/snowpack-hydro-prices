@@ -1,7 +1,7 @@
 # Methods & Design Choices
 
-This document explains **why** each methodological choice was made, in the
-author's own words. The README shows what the pipeline does; this explains the
+This document explains **why** each methodological choice was made, in my own
+words. The README shows what the pipeline does; this explains the
 reasoning behind it — the part that matters in an interview.
 
 ## Why April 1 snowpack?
