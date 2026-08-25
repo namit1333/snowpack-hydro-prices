@@ -2,6 +2,8 @@
 
 # Snowpack → Hydropower → Electricity Prices
 
+### Testing a Hypothesized Mechanism
+
 **Does California's winter snowpack predict summer electricity-market behavior?**
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -26,6 +28,18 @@ Coverage: **46 years** of snowpack (CDEC, 1980–2025) · **8 years** of hydro
 generation (CAISO fuel mix + EIA-930 cross-check) · **6 years** of price
 history (2016–18 + 2023–25, **two measurement regimes** — see below).
 
+**Design principle:** because the annual sample is only n = 8, I prioritized
+robustness, leakage prevention, and falsification tests over model complexity.
+Every technique in this repo exists to try to *kill* the headline result; the
+ones that failed are reported alongside the ones that held.
+
+**If you only have 2 minutes:**
+
+1. Read the key finding below
+2. Look at [the one-figure summary](#the-project-in-one-figure)
+3. Skim [METHODS.md](METHODS.md) — the reasoning behind every choice
+4. Run it yourself: `python scripts/make_sample_data.py && python scripts/check_reproducibility.py`
+
 ## The project in one figure
 
 ![research_summary](results/figures/research_summary.png)
@@ -42,8 +56,10 @@ is a hypothesis test, not a search over models for something significant.
 | **H1** | Higher April 1 snowpack → more summer hydro generation | OLS + permutation test + bootstrap CI + leave-one-out + 12-specification sensitivity grid | **Supported** (every check agrees) |
 | **H2** | Snowpack affects summer price volatility *through* hydro generation | Walk-forward forecasting vs. persistence + Diebold–Mariano + direct hydro→price regression + power analysis | **Inconclusive** (no OOS edge; sample too small to resolve) |
 
-**Key finding:** the physical mechanism is strongly supported; the market
-effect is not established with current data. That asymmetry is the result.
+**Key finding:** snowpack → hydro is a **strong and robust association**
+(survives permutation, bootstrap, leave-one-out, and a 12-specification
+sensitivity grid); snowpack → price shows **no detectable out-of-sample
+improvement** over persistence. That asymmetry is the result.
 
 **Important limitation:** the price window is 6 years (2016–18 + 2023–25, with
 a 2019–22 gap in public records) from **two different measurement regimes**.
@@ -73,7 +89,7 @@ cross-regime model comparisons are treated as exploratory**. Full detail in
 
 ## Results
 
-### 1. Snowpack → hydro — supported, and robust to how you specify it
+### 1. Snowpack → hydro: a strong, robust association
 
 ![hydro_vs_snowpack](results/figures/hydro_vs_snowpack.png)
 
@@ -110,7 +126,7 @@ every reasonable specification. (The June 1 benchmark lacks the coverage for a
 regression; May–Sep results equal Jun–Sep because the cached fuel-mix data
 starts in June.)
 
-### 2. Hydro → price, tested directly (new)
+### 2. Hydro → price, tested directly
 
 The mediation framework entangles the two links, so the second link is also
 tested on its own — does hydro generation *itself* correlate with price
@@ -140,7 +156,18 @@ TRAIN          PREDICT (strictly out-of-sample)
 2016-2024  →   2025
 ```
 
-Walk-forward results, **3 held-out years**:
+Walk-forward results, **3 held-out years**. The benchmark philosophy: the
+hypothesis-driven model must outperform the simple baselines out-of-sample to
+be considered useful — a sophisticated model that loses to persistence has
+demonstrated nothing.
+
+| Model | Purpose |
+|---|---|
+| Persistence (naive) | Strong naive baseline — the bar to clear |
+| Trailing 3-yr mean | Low-complexity benchmark |
+| ARIMA(0,1,0)+drift | Autoregressive benchmark |
+| OLS + snowpack | **The hypothesis-driven model** |
+| ARIMAX + snowpack | Dynamic + exogenous variant of the hypothesis |
 
 | Model | RMSE | MAE | Dir. acc. | Note |
 |---|---|---|---|---|
@@ -151,6 +178,12 @@ Walk-forward results, **3 held-out years**:
 | augmented_arimax | 16.09 | 15.05 | 0.00 | ARIMAX w/ snowpack exog. |
 
 ![walkforward_forecasts](results/figures/walkforward_forecasts.png)
+
+> **Out-of-sample result: snowpack did not improve electricity-price
+> volatility forecasts.** Across 3 held-out years, the snowpack-augmented
+> model failed to beat a persistence baseline. **This negative result is
+> retained rather than discarded** — dropping models that perform poorly would
+> introduce selection bias into the research process.
 
 **No model beats persistence** — and persistence is a genuinely hard baseline
 for volatility, which is itself the quant lesson. The wettest year in the
@@ -223,7 +256,7 @@ but it is **intentionally not used for inference**: with only 3–6 overlapping
 price years the Sobel test is uninformative (p ≈ 1.00), so no point estimate
 is reported anywhere.
 
-### 6. Monthly panel
+### 6. Monthly panel — higher-frequency extension
 
 `build_monthly_panel()` produces one row per (year, month) of Jun–Sep — 24
 rows from the 6 price years vs. 6 annual. **This is 4× the number of
@@ -248,6 +281,37 @@ hierarchical model) before any inference.
 | Diebold–Mariano | RMSE differences by chance | Inconclusive at n = 3 OOS — not used for inference |
 | Future-leakage test (automated) | Future data entering training | Verified: corrupting future targets leaves earlier predictions bit-identical |
 | Reproducibility check (CI) | Non-deterministic pipeline | Analysis run twice per push; outputs asserted identical |
+
+---
+
+## Research decisions
+
+### Why not use a larger ML model?
+
+The annual sample contains only 6–8 observations depending on the data source.
+A higher-capacity model would primarily increase variance and overfitting risk.
+The roadmap is more data, not more machinery.
+
+### Why persistence as the benchmark?
+
+Electricity-price volatility is highly persistent. Any proposed signal must
+outperform this baseline out-of-sample to demonstrate incremental value — and
+none here does.
+
+### Why not claim causality?
+
+The observational design does not identify the full structural effect of
+snowpack on prices. Demand, temperature, gas prices, transmission constraints,
+reservoir conditions, and the generation mix remain potential confounders.
+Snowpack is plausibly exogenous to summer market conditions, which makes the
+*first* link close to a natural experiment — but plausible exogeneity is not
+identification.
+
+### Why report a failed model?
+
+Negative results are retained because removing models that perform poorly
+would introduce selection bias into the research process. The ARIMA/ARIMAX
+rows that lose to persistence stay in the table.
 
 ---
 

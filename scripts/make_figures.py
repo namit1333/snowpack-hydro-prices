@@ -517,8 +517,9 @@ def research_summary(p: pd.DataFrame):
             "#b26a00")
     ax.add_patch(FancyArrowPatch((0.665, 0.30), (0.665, 0.47), arrowstyle="-",
                                  lw=1.2, color="#b26a00", zorder=1))
-    ax.text(0.50, 0.925, "Physical mechanism supported - market effect not established",
-            ha="center", fontsize=13, fontweight="bold")
+    ax.text(0.50, 0.925, "Snowpack -> hydro: strong, robust association   |   "
+            "Snowpack -> price: no detectable out-of-sample improvement",
+            ha="center", fontsize=12.5, fontweight="bold")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     save(fig, "research_summary.png")
