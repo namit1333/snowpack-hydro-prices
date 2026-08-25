@@ -21,6 +21,8 @@ from scipy import stats
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.regression.linear_model import OLS
 
+from src.inference import bootstrap_ci, hydro_price_link, permutation_test, power_curve
+
 MODELS = ["baseline_naive", "baseline_mean3", "baseline_arima",
           "augmented_ols", "augmented_arimax"]
 CONTROL_MODEL = "augmented_controls"  # snowpack + temp + demand (confounders)
@@ -166,13 +168,114 @@ def conditional_controls_eval(panel: pd.DataFrame, target: str = "price_vol",
 
 
 def rmse_table(wf: pd.DataFrame) -> pd.DataFrame:
-    """RMSE by model (and MAE for good measure)."""
+    """RMSE by model, plus MAE and directional accuracy.
+
+    Directional accuracy: does the model get the year-over-year *direction* of
+    volatility right (up/down vs the previous realized year)? For a trading
+    application direction often matters more than level, and persistence by
+    construction predicts "no change" (scored 0.5 when it abstains).
+    """
     g = wf.groupby("model").agg(
         rmse=("sq_error", lambda s: np.sqrt(s.mean())),
         mae=("error", lambda s: np.abs(s).mean()),
         n=("year", "count"),
     )
+    # directional accuracy per model
+    dirs = {}
+    for model, sub in wf.groupby("model"):
+        s = sub.sort_values("year")
+        prev = s["actual"].shift(1)
+        actual_dir = np.sign(s["actual"] - prev)
+        pred_dir = np.sign(s["pred"] - prev)
+        valid = actual_dir.notna() & (actual_dir != 0)
+        hits = (pred_dir[valid] == actual_dir[valid]).sum()
+        dirs[model] = round(float(hits / valid.sum()), 3) if valid.sum() else np.nan
+    g["directional_acc"] = pd.Series(dirs)
     return g.round(3).sort_values("rmse")
+
+
+# ------------------------------------------------- stability + diagnostics
+def coefficient_stability(panel: pd.DataFrame, target: str = "price_vol",
+                          exog: str = "snowpack_pct",
+                          min_train: int = 3) -> pd.DataFrame:
+    """Snowpack coefficient across each expanding training window.
+
+    The same coefficient the walk-forward uses implicitly. If it swings wildly
+    from window to window, the model has no stable signal -- exactly what the
+    n=3-OOS RMSE table cannot show on its own.
+    """
+    df = panel[[target, exog]].dropna().sort_index()
+    rows = []
+    for i in range(min_train, len(df) + 1):
+        train = df.iloc[:i]
+        X = np.column_stack([np.ones(len(train)), train[exog].values])
+        fit = OLS(train[target].values, X).fit()
+        rows.append({
+            "train_window": f"{train.index[0]}-{train.index[-1]}",
+            "n_train": len(train),
+            "snowpack_coef": round(float(fit.params[1]), 4),
+            "se": round(float(fit.bse[1]), 4),
+            "p_value": round(float(fit.pvalues[1]), 3),
+        })
+    return pd.DataFrame(rows)
+
+
+def controls_failure_analysis(panel: pd.DataFrame, target: str = "price_vol",
+                              exog: str = "snowpack_pct",
+                              control_cols: list[str] | None = None) -> dict:
+    """Why did the controls model perform so badly? (Failure analysis.)
+
+    The conditional controls model posted RMSE ~4x persistence at n_OOS = 3.
+    This diagnoses why, rather than just reporting it:
+      1. parameter count vs training size (overfitting ratio per fold)
+      2. design-matrix condition number (multicollinearity)
+      3. control-snowpack correlations (controls soaking up the signal)
+      4. leave-one-control-out conditional RMSEs (which control hurts most)
+    """
+    control_cols = control_cols or [c for c in ["temp_mean_c", "demand_mean_mw",
+                                                "gas_mean"] if c in panel.columns]
+    df = panel[[target, exog] + control_cols].dropna().sort_index()
+    out: dict = {"n_complete": len(df), "controls": control_cols}
+    if len(df) < 5 or not control_cols:
+        out["error"] = "not enough complete rows or no controls cached"
+        return out
+
+    # multicollinearity: condition number of the standardized design
+    Z = (df[[exog] + control_cols] - df[[exog] + control_cols].mean()) \
+        / df[[exog] + control_cols].std()
+    out["condition_number"] = round(float(np.linalg.cond(Z.values)), 1)
+    out["control_snowpack_corr"] = {
+        c: round(float(df[exog].corr(df[c])), 3) for c in control_cols}
+
+    # overfitting ratio per walk-forward fold (params / train rows)
+    folds = []
+    for i in range(4, len(df)):
+        folds.append({"year": int(df.index[i]), "train_rows": i,
+                      "params": 2 + len(control_cols),
+                      "params_per_row": round((2 + len(control_cols)) / i, 2)})
+    out["folds"] = folds
+
+    # leave-one-control-out conditional RMSE (what-if eval, as in the pipeline)
+    # snowpack-only variant uses augmented_ols (identical specification to
+    # CONTROL_MODEL with zero controls) since CONTROL_MODEL requires >= 1 control.
+    loo_rmse = {}
+    for drop in [None] + control_cols:
+        cols = [c for c in control_cols if c != drop]
+        try:
+            if cols:
+                cwf = walk_forward(panel, target=target, exog_col=exog,
+                                   min_train=4, models=[CONTROL_MODEL],
+                                   control_cols=cols)
+            else:
+                cwf = walk_forward(panel, target=target, exog_col=exog,
+                                   min_train=4, models=["augmented_ols"])
+            if not cwf.empty:
+                loo_rmse[drop or "snowpack_only"] = round(
+                    float(np.sqrt(cwf["sq_error"].mean())), 2)
+        except RuntimeError:
+            loo_rmse[drop or "snowpack_only"] = np.nan
+    out["leave_one_control_out_rmse"] = loo_rmse
+    return out
 
 
 def dm_test(err1: np.ndarray, err2: np.ndarray) -> dict:
@@ -385,6 +488,45 @@ def run_analysis(panel: pd.DataFrame) -> dict:
                                   "inference" if med_res.get("n", 0) < 10
                                   else "preliminary")
             out[f"mediation_{med}"] = med_res
+
+    # ------------------------------------------------ small-sample inference
+    # At n=8 the t-based p-value rests on normality the sample cannot verify,
+    # so the first stage is cross-checked with a permutation test (no
+    # distributional assumption) and a bootstrap CI (resample years).
+    fs = out.get("first_stage_hydro_gwh", {})
+    if "slope_gwh_per_pct" in fs:
+        fs_df = panel[["hydro_gwh", "snowpack_pct"]].dropna()
+        x, y = fs_df["snowpack_pct"].values, fs_df["hydro_gwh"].values
+        out["permutation_first_stage"] = permutation_test(x, y)
+        boot = bootstrap_ci(x, y)
+        boot.pop("boot", None)  # the full distribution goes to the figure, not json
+        out["bootstrap_first_stage"] = boot
+
+        # Power analysis for the price leg: how many years would 80% power
+        # need to detect a price effect as strong (in R^2 terms) as the
+        # validated hydro effect? Turns "not enough data" into a number.
+        pr = panel[["price_vol", "snowpack_pct"]].dropna()
+        if len(pr) >= 4:
+            Xp = np.column_stack([np.ones(len(pr)), pr["snowpack_pct"].values])
+            fitp = OLS(pr["price_vol"].values, Xp).fit()
+            resid_sd = float(np.sqrt(fitp.mse_resid))
+            x_sd = float(pr["snowpack_pct"].std())
+            r2_target = min(max(fs.get("r2", 0.61), 0.05), 0.95)
+            effect = float(np.sqrt(r2_target / (1 - r2_target)) * resid_sd / x_sd)
+            out["power_price_leg"] = power_curve(effect, resid_sd,
+                                                 pr["snowpack_pct"].values)
+            pc = out["power_price_leg"].get("curve", [])
+            out["power_price_leg"]["curve"] = pc  # keep; small enough for json
+
+    # Second link tested directly: hydro output -> price volatility
+    out["link_hydro_price"] = hydro_price_link(panel)
+
+    # Coefficient stability across training windows (DataFrame -> CSV in pipeline)
+    if panel[["price_vol", "snowpack_pct"]].dropna().shape[0] >= 4:
+        out["coef_stability_price_vol"] = coefficient_stability(panel)
+
+    # Failure analysis: why the controls model collapsed
+    out["controls_failure"] = controls_failure_analysis(panel)
 
     return out
 

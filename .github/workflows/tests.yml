@@ -25,3 +25,20 @@ jobs:
       - name: Run unit tests
         run: |
           python -m pytest tests/ -v
+
+  reproducibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Generate sample dataset (no downloads, no API keys)
+        run: python scripts/make_sample_data.py
+      - name: Run analysis twice and verify identical outputs
+        run: python scripts/check_reproducibility.py

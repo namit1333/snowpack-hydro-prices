@@ -54,7 +54,7 @@ def test_summer_price_features_drops_non_summer():
     times = pd.date_range("2020-01-01", periods=48, freq="h", tz="UTC")
     prices = pd.DataFrame({"time": times, "hub": "H", "price": 30.0})
     out = features.summer_price_features(prices)
-    assert len(out) == 1 and out.iloc[0]["price_vol"] == 0.0  # constant series
+    assert len(out) == 0  # January only -> nothing inside the Jun-Sep window
 
 
 def test_summer_hydro_gwh():

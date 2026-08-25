@@ -42,21 +42,27 @@ PRICE_UNIT = 1.0  # LMP in $/MWh
 
 # ---------------------------------------------------------------- snowpack
 def april1_snowpack_index(snow: pd.DataFrame,
-                          normal_window: tuple[int, int] = NORMAL_WINDOW) -> pd.Series:
-    """April 1 SWC as % of normal, by year, median across snow courses.
+                          normal_window: tuple[int, int] = NORMAL_WINDOW,
+                          target_date: tuple[int, int] = (4, 1),
+                          day_tol: int = 5) -> pd.Series:
+    """Snow water content as % of normal, by year, median across snow courses.
 
     snow: DataFrame with columns [station_id, date, value] (inches SWC).
+    target_date: (month, day) of the measurement benchmark -- (4, 1) is the
+    standard hydrological April 1 benchmark; other dates power the sensitivity
+    analysis. day_tol is the +/- day tolerance around the target date.
     """
     snow = snow.copy()
     snow["year"] = snow["date"].dt.year
     snow["month"] = snow["date"].dt.month
     snow["day"] = snow["date"].dt.day
 
-    # Some courses report April 1 slightly early/late; take Apr 1 exactly when
-    # present, else the closest April observation within +-5 days.
-    apr = snow[snow["month"] == 4].copy()
-    apr["day_offset"] = (apr["day"] - 1).abs()
-    apr = apr[apr["day_offset"] <= 5]
+    # Courses report on/near the benchmark date; take the target date exactly
+    # when present, else the closest observation within +/- day_tol days.
+    tgt_m, tgt_d = target_date
+    apr = snow[snow["month"] == tgt_m].copy()
+    apr["day_offset"] = (apr["day"] - tgt_d).abs()
+    apr = apr[apr["day_offset"] <= day_tol]
     idx = apr.groupby(["station_id", "year"])["day_offset"].idxmin()
     apr1 = apr.loc[idx, ["station_id", "year", "value"]].rename(columns={"value": "swc"})
 
@@ -92,29 +98,43 @@ def _daily_price_stats(prices: pd.DataFrame) -> pd.DataFrame:
     return daily
 
 
-def summer_price_features(prices: pd.DataFrame) -> pd.DataFrame:
-    """Per-year summer price summary: mean, peak, daily volatility, hourly volatility."""
+def summer_price_features(prices: pd.DataFrame,
+                          months: list[int] | None = None) -> pd.DataFrame:
+    """Per-year summer price summary: mean, peak, daily volatility, hourly volatility.
+
+    months: summer window definition (default SUMMER_MONTHS = Jun-Sep); other
+    windows power the sensitivity analysis.
+    """
+    months = SUMMER_MONTHS if months is None else months
     prices = prices.copy()
     prices["year"] = prices["time"].dt.year
     daily = _daily_price_stats(prices)
     daily["year"] = daily["date"].dt.year
+    daily = daily[daily["date"].dt.month.isin(months)]
 
     per_day = (
         daily.groupby("year")["daily_price"]
         .agg(price_mean="mean", price_peak="max", price_vol="std")
         .reset_index()
     )
-    hourly = prices.groupby("year")["price"].std().rename("price_vol_hourly").reset_index()
+    hourly = prices[prices["time"].dt.month.isin(months)]
+    hourly = hourly.groupby("year")["price"].std().rename("price_vol_hourly").reset_index()
     return per_day.merge(hourly, on="year")
 
 
 # ---------------------------------------------------------------- hydro
-def summer_hydro(fuel_mix: pd.DataFrame) -> pd.DataFrame:
-    """Summer hydro generation (GWh) per year from CAISO fuel mix (MW x 5min)."""
+def summer_hydro(fuel_mix: pd.DataFrame,
+                 months: list[int] | None = None) -> pd.DataFrame:
+    """Summer hydro generation (GWh) per year from CAISO fuel mix (MW x 5min).
+
+    months: summer window definition (default SUMMER_MONTHS = Jun-Sep).
+    """
     if fuel_mix.empty:
         return pd.DataFrame(columns=["year", "hydro_gwh"])
+    months = SUMMER_MONTHS if months is None else months
     fm = fuel_mix.copy()
     fm["Time"] = pd.to_datetime(fm["Time"])
+    fm = fm[fm["Time"].dt.month.isin(months)]
     hydro_cols = [c for c in ["Large Hydro", "Small Hydro"] if c in fm.columns]
     fm["hydro_mw"] = fm[hydro_cols].sum(axis=1, min_count=1)
     # MW * (5/60) h = MWh per 5-minute interval

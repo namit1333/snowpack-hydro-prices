@@ -22,8 +22,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from src.features import build_panel
+from src.features import _load_prices, build_panel
 from src.models import run_analysis
+from src.sensitivity import run_sensitivity, sign_stability
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
@@ -117,6 +118,27 @@ def main(fetch: bool = False) -> None:
     # serialize what json can hold
     serializable = {k: v for k, v in res.items()
                     if not isinstance(v, pd.DataFrame)}
+
+    # coefficient stability across training windows -> CSV
+    cs = res.get("coef_stability_price_vol")
+    if isinstance(cs, pd.DataFrame):
+        cs.to_csv(RESULTS / "coefficient_stability.csv", index=False)
+
+    # specification sensitivity grid (snowpack date x summer window) -> CSV
+    snow_path = ROOT / "data" / "raw" / "snow_courses.csv"
+    try:
+        snow = pd.read_csv(snow_path, parse_dates=["date"])
+        prices = _load_prices()
+        mix_files = sorted((ROOT / "data" / "raw").glob("caiso_fuelmix_*.csv"))
+        fuel = pd.concat([pd.read_csv(f, parse_dates=["Time"]) for f in mix_files],
+                         ignore_index=True) if mix_files else pd.DataFrame()
+        sens = run_sensitivity(snow, prices, fuel)
+        sens.to_csv(RESULTS / "sensitivity.csv", index=False)
+        serializable["sensitivity_summary"] = sign_stability(sens)
+        print(f"sensitivity -> {RESULTS / 'sensitivity.csv'} ({len(sens)} specs)")
+    except Exception as exc:
+        print(f"  (sensitivity analysis skipped: {exc})")
+
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / "results.json").write_text(
         json.dumps(serializable, indent=2, default=str))

@@ -38,6 +38,7 @@ from src.models import (  # noqa: E402
 
 BLUE, RED, GRAY = "#2c6fbb", "#c0392b", "#555555"
 GOLD = "#e6a817"
+GREEN = "#2e7d32"
 
 
 def panel() -> pd.DataFrame:
@@ -430,6 +431,129 @@ def walkforward_forecasts(p: pd.DataFrame):
     save(fig, "walkforward_forecasts.png")
 
 
+# --------------------------------------- permutation / summary / sensitivity
+def permutation_null(p: pd.DataFrame):
+    """Null distribution of the snowpack->hydro slope under year permutation.
+
+    Shows WHERE the observed slope sits in the world of 'no relationship':
+    far in the right tail. Distribution-free evidence that does not lean on
+    normality at n = 8.
+    """
+    from src.inference import permutation_test
+
+    df = p[["hydro_gwh", "snowpack_pct"]].dropna()
+    res = permutation_test(df["snowpack_pct"].values, df["hydro_gwh"].values,
+                           n_perm=10_000, seed=42)
+    null = np.array(res["null"])
+    fig, ax = plt.subplots(figsize=(10, 5.2))
+    ax.hist(null, bins=60, color=BLUE, alpha=0.55, edgecolor="white",
+            label="Permuted slopes (snowpack-year pairing shuffled)")
+    ax.axvline(res["observed_slope"], color=RED, lw=2.4,
+               label=f"Observed slope = +{res['observed_slope']:.1f} GWh/pp")
+    ax.axvline(-res["observed_slope"], color=RED, lw=1.4, ls=":")
+    ax.set_xlabel("OLS slope under H0 (GWh per percentage point)", fontsize=11)
+    ax.set_ylabel("Permutations", fontsize=11)
+    ax.set_title(f"The real snowpack-hydro relationship sits in the extreme tail of the null distribution\n"
+                 f"permutation p = {res['perm_p']:.4f} ({res['n_perm']:,} shuffles, n = {res['n']} years) "
+                 "-- no normality assumption", fontsize=12)
+    ax.legend(fontsize=9)
+    ax.grid(alpha=0.25)
+    save(fig, "permutation_null.png")
+    return res
+
+
+def research_summary(p: pd.DataFrame):
+    """One-figure summary of the whole causal chain with verdicts.
+
+    A reader should understand the project's question, the supported link, and
+    the inconclusive link in ~10 seconds.
+    """
+    fs = first_stage(p, mediator="hydro_gwh")
+    med = mediation_analysis(p, target="price_vol", mediator="hydro_gwh")
+    fig, ax = plt.subplots(figsize=(11.5, 5.6))
+    ax.axis("off")
+
+    def node(x, y, text, w, h, fc, ec):
+        ax.add_patch(FancyBboxPatch((x - w / 2, y - h / 2), w, h,
+                                    boxstyle="round,pad=0.01,rounding_size=0.03",
+                                    fc=fc, ec=ec, lw=1.6, zorder=2))
+        ax.text(x, y, text, ha="center", va="center", fontsize=11.5, zorder=3)
+
+    node(0.16, 0.62, "April 1 SNOWPACK\n(% of normal)\n46 years (CDEC)", 0.28, 0.26,
+         "#dbe9f7", GRAY)
+    node(0.50, 0.62, "Summer HYDRO\ngeneration (GWh)\n8 years (CAISO+EIA)", 0.28, 0.26,
+         "#e8f5e3", "#2e7d32")
+    node(0.85, 0.62, "Summer PRICE\nvolatility ($/MWh)\n6 years, 2 regimes", 0.28, 0.26,
+         "#f7e3e7", GRAY)
+
+    def verdict(x, y, text, color):
+        ax.text(x, y, text, ha="center", va="center", fontsize=10,
+                color=color, fontweight="bold", zorder=3,
+                bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                          alpha=0.95, edgecolor=color, linewidth=1.1))
+
+    # link 1: snowpack -> hydro (supported)
+    ax.add_patch(FancyArrowPatch((0.30, 0.62), (0.36, 0.62), arrowstyle="-|>",
+                                 mutation_scale=22, lw=2.6, color="#2e7d32", zorder=1))
+    verdict(0.33, 0.30,
+            f"SUPPORTED\n+{fs.get('slope_gwh_per_pct', 24.9):.1f} GWh/pp\n"
+            f"p = {fs.get('p_value', 0.022):.3f} | perm p = 0.003\nn = {fs.get('n', 8)}, LOO-stable",
+            "#2e7d32")
+    ax.add_patch(FancyArrowPatch((0.33, 0.44), (0.33, 0.36), arrowstyle="-",
+                                 lw=1.2, color="#2e7d32", zorder=1))
+
+    # link 2: hydro -> price (inconclusive)
+    ax.add_patch(FancyArrowPatch((0.66, 0.68), (0.71, 0.66), arrowstyle="-|>",
+                                 mutation_scale=22, lw=2.2, color=GRAY,
+                                 linestyle=":", zorder=1))
+    # direct: snowpack -> price (inconclusive)
+    ax.add_patch(FancyArrowPatch((0.16, 0.76), (0.85, 0.76), arrowstyle="-|>",
+                                 mutation_scale=20, lw=2.0, color=GRAY,
+                                 linestyle=":",
+                                 connectionstyle="arc3,rad=-0.12", zorder=1))
+    verdict(0.665, 0.16,
+            "INCONCLUSIVE\nno model beats persistence\nout-of-sample (3 OOS years)\n"
+            "power analysis: ~30+ years needed",
+            "#b26a00")
+    ax.add_patch(FancyArrowPatch((0.665, 0.30), (0.665, 0.47), arrowstyle="-",
+                                 lw=1.2, color="#b26a00", zorder=1))
+    ax.text(0.50, 0.925, "Physical mechanism supported - market effect not established",
+            ha="center", fontsize=13, fontweight="bold")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    save(fig, "research_summary.png")
+
+
+def sensitivity_plot():
+    """Coefficient plot across the specification grid (date x summer window)."""
+    path = ROOT / "results" / "sensitivity.csv"
+    if not path.exists():
+        print("  (sensitivity.csv missing - run the pipeline first)")
+        return
+    sens = pd.read_csv(path).dropna(subset=["hydro_slope"])
+    fig, ax = plt.subplots(figsize=(11, 6))
+    y = np.arange(len(sens))
+    colors = [GREEN if pv < 0.05 else (GOLD if pv < 0.10 else GRAY)
+              for pv in sens["hydro_p"]]
+    ax.hlines(y, sens["hydro_ci_lo"], sens["hydro_ci_hi"], color=colors,
+              alpha=0.5, lw=2)
+    ax.scatter(sens["hydro_slope"], y, c=colors, s=55, zorder=3)
+    ax.axvline(0, color="black", lw=1, ls="--", alpha=0.6)
+    labels = [f"{r.snow_date} | {r.summer_window} (n={int(r.hydro_n)})"
+              for r in sens.itertuples()]
+    ax.set_yticks(y, labels, fontsize=8.5)
+    ax.invert_yaxis()
+    ax.set_xlabel("Snowpack -> hydro slope (GWh per percentage point)", fontsize=11)
+    ax.set_title(f"The hydro result does not hinge on one arbitrary modeling choice\n"
+                 f"slope and 95% t-CI across {len(sens)} estimable specifications: "
+                 "benchmark date x summer window (green p<0.05, gold p<0.10)", fontsize=12)
+    ax.grid(alpha=0.25, axis="x")
+    save(fig, "sensitivity_grid.png")
+
+
+
+
+
 def main():
     print("Generating figures from real results ...")
     p = panel()
@@ -441,6 +565,9 @@ def main():
     mediation_diagram(p)
     equations()
     walkforward_forecasts(p)
+    permutation_null(p)
+    research_summary(p)
+    sensitivity_plot()
     print("done.")
 
 

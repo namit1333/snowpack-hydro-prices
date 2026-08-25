@@ -88,6 +88,55 @@ held-out year — it is a what-if robustness check ("given we knew the weather,
 does snowpack still matter?"), not a pure forecast. That distinction is
 deliberate and is documented in `models.py`.
 
+## Why a permutation test on top of the OLS p-value?
+
+At n = 8 the t-test's p-value leans on a normality assumption the sample
+cannot verify. The permutation test makes no distributional assumption: it
+shuffles the snowpack-year pairing 10,000 times and asks how often chance
+alone produces a slope at least as extreme as the observed one. If the
+parametric and permutation p-values agree (they do: 0.022 vs 0.018), the
+conclusion is not an artifact of the distributional assumption.
+
+## Why a bootstrap confidence interval?
+
+Same logic, different angle: resample the 8 years with replacement 10,000
+times and read the 2.5th/97.5th percentiles of the slope distribution. If the
+bootstrap interval broadly agrees with the t-based interval, the t-interval is
+not doing special work. They agree (bootstrap [14.2, 51.8] vs t [5.0, 44.8]).
+
+## Why a specification sensitivity grid?
+
+"Does your conclusion depend on one arbitrary modeling choice?" is the first
+question a reviewer asks about a single headline regression. The grid re-runs
+the snowpack -> hydro regression across every benchmark date the CDEC archive
+supports (courses are measured on the 1st, so Mar 1 / Apr 1 / May 1 / Jun 1)
+crossed with four definitions of "summer". 12 of 16 specifications are
+estimable; all 12 slopes are positive (+15.0 to +25.5 GWh/pp). The headline
+number is a property of the data, not of one specification.
+
+## Why test hydro -> price directly?
+
+Mediation entangles the two links of the chain. Regressing price volatility on
+hydro generation alone gives the second link its own test, independent of the
+first. It is null at n = 4 (p = 0.31) -- consistent with the chain breaking
+(not being resolvable) at the market link, not the physical one.
+
+## Why a power analysis?
+
+"We don't have enough data" is weak; "detecting an effect this size at 80%
+power would need ~12 years; we have 6" is a falsifiable claim. The power
+curve is simulated from the observed predictor distribution and residual
+noise. It converts the roadmap's P0 item (fill the 2019-22 price gap) from a
+vague aspiration into a quantified requirement.
+
+## Why a leakage test?
+
+"Strictly out-of-sample" is usually a claim; here it is a verified property.
+`tests/test_no_future_leakage.py` corrupts every target value from year T
+onward and asserts that predictions for years before T are bit-identical. If
+any future information ever leaks into a training window, the test fails
+before any result is trusted.
+
 ## Why mediation, and why it is explicitly exploratory?
 
 Baron–Kenny mediation is the standard way to test whether hydro output *carries*

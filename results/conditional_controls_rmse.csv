@@ -1,2 +1,2 @@
-model,rmse,mae,n
-augmented_controls,40.981,32.771,2
+model,rmse,mae,n,directional_acc
+augmented_controls,41.04,32.834,2,0.0
