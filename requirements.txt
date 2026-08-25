@@ -1,7 +1,4 @@
-# Python 3.10+ required
-python_requires>=3.10
-
-# Core data stack
+# Core data stack (Python 3.10+ required)
 pandas>=2.0
 numpy>=1.26
 requests>=2.31
